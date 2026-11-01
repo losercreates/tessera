@@ -23,10 +23,10 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 **Purpose**: Project directory layout, C++20 CMake build configuration, compiler sanitizers, and protobuf contract generation.
 
-- [ ] T001 [P] Create initial directory layout per plan.md in include/tessera/, src/, protos/, and tests/
-- [ ] T002 Configure CMake 3.25+ build system with C++20, Ninja generator, gRPC, Protobuf, and GoogleTest FetchContent in CMakeLists.txt
-- [ ] T003 [P] Configure compiler warning flags (-Wall -Wextra -Werror -pedantic) and ASan/UBSan sanitizer options in CMakeLists.txt
-- [ ] T004 [P] Copy contract schema into protos/gateway.proto for protoc gRPC C++ code generation
+- [X] T001 [P] Create initial directory layout per plan.md in include/tessera/, src/, protos/, and tests/
+- [X] T002 Configure CMake 3.25+ build system with C++20, Ninja generator, gRPC, Protobuf, and GoogleTest FetchContent in CMakeLists.txt
+- [X] T003 [P] Configure compiler warning flags (-Wall -Wextra -Werror -pedantic) and ASan/UBSan sanitizer options in CMakeLists.txt
+- [X] T004 [P] Copy contract schema into protos/gateway.proto for protoc gRPC C++ code generation
 
 ---
 
@@ -36,12 +36,12 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 **⚠️ CRITICAL**: No user story implementation can begin until this foundational phase is complete.
 
-- [ ] T005 Implement common error types and status mapping in include/tessera/common/types.hpp and src/common/types.cpp
-- [ ] T006 [P] Implement C++20 structured logger with format strings in include/tessera/common/logger.hpp and src/common/logger.cpp
-- [ ] T007 [P] Implement UUIDv4 correlation ID generator and header propagation utilities in include/tessera/common/correlation.hpp and src/common/correlation.cpp
-- [ ] T008 Implement ICompletionBackend abstract interface in include/tessera/backend/completion_backend.hpp
-- [ ] T009 Implement in-memory MockEchoBackend with token estimation in include/tessera/backend/mock_backend.hpp and src/backend/mock_backend.cpp
-- [ ] T010 Setup GoogleTest runner harness in tests/test_main.cpp and configure CTest targets in CMakeLists.txt
+- [X] T005 Implement common error types and status mapping in include/tessera/common/types.hpp and src/common/types.cpp
+- [X] T006 [P] Implement C++20 structured logger with format strings in include/tessera/common/logger.hpp and src/common/logger.cpp
+- [X] T007 [P] Implement UUIDv4 correlation ID generator and header propagation utilities in include/tessera/common/correlation.hpp and src/common/correlation.cpp
+- [X] T008 Implement ICompletionBackend abstract interface in include/tessera/backend/completion_backend.hpp
+- [X] T009 Implement in-memory MockEchoBackend with token estimation in include/tessera/backend/mock_backend.hpp and src/backend/mock_backend.cpp
+- [X] T010 Setup GoogleTest runner harness in tests/test_main.cpp and configure CTest targets in CMakeLists.txt
 
 **Checkpoint**: Foundation ready. User story implementation can now begin.
 
@@ -56,15 +56,15 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 ### Tests for User Story 1
 > *NOTE: Verify these tests compile and fail prior to finishing implementation.*
 
-- [ ] T011 [P] [US1] Unit test for ChatCompletionRequest validation and MockEchoBackend logic in tests/unit/test_mock_backend.cpp
-- [ ] T012 [P] [US1] Unit test for Protobuf serialization and response formatting in tests/unit/test_types.cpp
+- [X] T011 [P] [US1] Unit test for ChatCompletionRequest validation and MockEchoBackend logic in tests/unit/test_mock_backend.cpp
+- [X] T012 [P] [US1] Unit test for Protobuf serialization and response formatting in tests/unit/test_types.cpp
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement CallData state machine interface (CREATE, PROCESS, FINISH, DESTROY) in include/tessera/server/call_data.hpp
-- [ ] T014 [US1] Implement CallData execution logic invoking ICompletionBackend in src/server/call_data.cpp
-- [ ] T015 [US1] Implement async GatewayServer listener registering CallData with CompletionQueue in include/tessera/server/gateway_server.hpp and src/server/gateway_server.cpp
-- [ ] T016 [US1] Implement end-to-end gRPC client integration test verifying ChatCompletion in tests/integration/test_server_async.cpp
+- [X] T013 [US1] Implement CallData state machine interface (CREATE, PROCESS, FINISH, DESTROY) in include/tessera/server/call_data.hpp
+- [X] T014 [US1] Implement CallData execution logic invoking ICompletionBackend in src/server/call_data.cpp
+- [X] T015 [US1] Implement async GatewayServer listener registering CallData with CompletionQueue in include/tessera/server/gateway_server.hpp and src/server/gateway_server.cpp
+- [X] T016 [US1] Implement end-to-end gRPC client integration test verifying ChatCompletion in tests/integration/test_server_async.cpp
 
 **Checkpoint**: User Story 1 (MVP) is fully functional and independently testable.
 
@@ -78,13 +78,13 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 ### Tests for User Story 2
 
-- [ ] T017 [P] [US2] Implement high-concurrency stress test with 500 parallel worker threads in tests/integration/test_concurrency.cpp
+- [X] T017 [P] [US2] Implement high-concurrency stress test with 500 parallel worker threads in tests/integration/test_concurrency.cpp
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Implement multi-threaded CompletionQueue worker pool in src/server/gateway_server.cpp
-- [ ] T019 [P] [US2] Implement server configuration parameters (port, worker threads, queue count) in include/tessera/server/server_config.hpp
-- [ ] T020 [US2] Implement standalone gateway executable entrypoint in src/main.cpp
+- [X] T018 [US2] Implement multi-threaded CompletionQueue worker pool in src/server/gateway_server.cpp
+- [X] T019 [P] [US2] Implement server configuration parameters (port, worker threads, queue count) in include/tessera/server/server_config.hpp
+- [X] T020 [US2] Implement standalone gateway executable entrypoint in src/main.cpp
 
 **Checkpoint**: User Stories 1 and 2 operate concurrently with verified thread safety and high throughput.
 
@@ -98,13 +98,13 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Unit test for HealthCheck RPC and serving status transitions in tests/unit/test_health_check.cpp
-- [ ] T022 [P] [US3] Implement integration test verifying graceful shutdown while requests are in-flight in tests/integration/test_graceful_shutdown.cpp
+- [X] T021 [P] [US3] Unit test for HealthCheck RPC and serving status transitions in tests/unit/test_health_check.cpp
+- [X] T022 [P] [US3] Implement integration test verifying graceful shutdown while requests are in-flight in tests/integration/test_graceful_shutdown.cpp
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Implement HealthCheck CallData handler and status registry in include/tessera/server/health_service.hpp and src/server/health_service.cpp
-- [ ] T024 [US3] Implement POSIX signal handling (SIGINT, SIGTERM) and graceful draining loop with configurable timeout in src/server/gateway_server.cpp
+- [X] T023 [US3] Implement HealthCheck CallData handler and status registry in include/tessera/server/health_service.hpp and src/server/health_service.cpp
+- [X] T024 [US3] Implement POSIX signal handling (SIGINT, SIGTERM) and graceful draining loop with configurable timeout in src/server/gateway_server.cpp
 
 **Checkpoint**: Health checking and graceful termination operate reliably for containerized environments.
 
@@ -118,13 +118,13 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 ### Tests for User Story 4
 
-- [ ] T025 [P] [US4] Unit test for schema constraints (role enum validation, non-empty content) and correlation ID generation in tests/unit/test_validation.cpp
-- [ ] T026 [P] [US4] Implement integration test verifying invalid request rejection and correlation ID echo in tests/integration/test_validation_integration.cpp
+- [X] T025 [P] [US4] Unit test for schema constraints (role enum validation, non-empty content) and correlation ID generation in tests/unit/test_validation.cpp
+- [X] T026 [P] [US4] Implement integration test verifying invalid request rejection and correlation ID echo in tests/integration/test_validation_integration.cpp
 
 ### Implementation for User Story 4
 
-- [ ] T027 [US4] Implement request validator enforcing role must be one of 'system', 'user', 'assistant', 'tool' and content not empty in src/server/call_data.cpp
-- [ ] T028 [US4] Configure gRPC ChannelArguments for max message size (4MB limit) in src/server/gateway_server.cpp
+- [X] T027 [US4] Implement request validator enforcing role must be one of 'system', 'user', 'assistant', 'tool' and content not empty in src/server/call_data.cpp
+- [X] T028 [US4] Configure gRPC ChannelArguments for max message size (4MB limit) in src/server/gateway_server.cpp
 
 **Checkpoint**: All four user stories complete, validated, and integrated.
 
@@ -134,10 +134,10 @@ description: "Task list for Milestone 1: gRPC Gateway Foundation"
 
 **Purpose**: CI/CD automation, sanitizer validation, and end-to-end documentation verification.
 
-- [ ] T029 [P] Create GitHub Actions CI workflow in .github/workflows/ci.yml with GCC 13, Clang 17, and ASan/UBSan matrix
-- [ ] T030 [P] Implement standalone test client utility in tools/gateway_client.cpp for manual verification
-- [ ] T031 [P] Run quickstart.md validation script and document output in specs/001-grpc-gateway-foundation/quickstart.md
-- [ ] T032 Verify AddressSanitizer and UndefinedBehaviorSanitizer pass cleanly across all test targets
+- [X] T029 [P] Create GitHub Actions CI workflow in .github/workflows/ci.yml with GCC 13, Clang 17, and ASan/UBSan matrix
+- [X] T030 [P] Implement standalone test client utility in tools/gateway_client.cpp for manual verification
+- [X] T031 [P] Run quickstart.md validation script and document output in specs/001-grpc-gateway-foundation/quickstart.md
+- [X] T032 Verify AddressSanitizer and UndefinedBehaviorSanitizer pass cleanly across all test targets
 
 ---
 

@@ -1,0 +1,73 @@
+name: Milestone 1 Gateway Foundation CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: "Build & Test (${{ matrix.compiler }}, Sanitizer: ${{ matrix.sanitizer }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            sanitizer: none
+            build_type: Release
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+            sanitizer: address,undefined
+            build_type: Debug
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build build-essential \
+            libprotobuf-dev protobuf-compiler \
+            libgrpc++-dev protobuf-compiler-grpc || true
+
+      - name: Setup Compiler
+        run: |
+          echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
+          ${{ matrix.cc }} --version
+          ${{ matrix.cxx }} --version
+
+      - name: Configure CMake
+        run: |
+          SAN_FLAG=""
+          if [ "${{ matrix.sanitizer }}" != "none" ]; then
+            SAN_FLAG="-DENABLE_SANITIZERS=ON"
+          fi
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_TESTS=ON \
+            $SAN_FLAG
+
+      - name: Build All Targets
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
+
+      - name: Run Unit & Integration Tests
+        run: |
+          ctest --test-dir build --output-on-failure --parallel $(nproc)
+
+      - name: Run High-Concurrency Load Test (500 clients)
+        run: |
+          ./build/concurrency_test
+
+      - name: Verify CLI Tools & Health Check
+        run: |
+          ./build/gateway_client --health
+          ./build/gateway_client --message "CI validation message"
