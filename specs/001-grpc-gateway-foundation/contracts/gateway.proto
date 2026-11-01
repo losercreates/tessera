@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package tessera.gateway.v1;
+
+option cc_enable_arenas = true;
+
+// Chat completion message representing a single conversation turn.
+message ChatMessage {
+  string role = 1;     // "system", "user", "assistant", "tool"
+  string content = 2;  // Text payload
+  string name = 3;     // Optional author name
+}
+
+// Inbound unified ChatCompletion request.
+message ChatCompletionRequest {
+  string model = 1;                         // Target model identifier
+  repeated ChatMessage messages = 2;        // Conversation history
+  optional float temperature = 3;           // Sampling temperature [0.0, 2.0]
+  optional uint32 max_tokens = 4;           // Max generated tokens
+  bool stream = 5;                          // Unary vs streaming mode
+  string correlation_id = 6;                // Distributed tracing correlation ID
+}
+
+// An individual completion choice.
+message Choice {
+  uint32 index = 1;
+  ChatMessage message = 2;
+  string finish_reason = 3;                 // "stop", "length", etc.
+}
+
+// Token usage summary.
+message Usage {
+  uint32 prompt_tokens = 1;
+  uint32 completion_tokens = 2;
+  uint32 total_tokens = 3;
+}
+
+// Outbound unified ChatCompletion response.
+message ChatCompletionResponse {
+  string id = 1;                            // Unique ID: chatcmpl-<uuid>
+  int64 created = 2;                        // Unix epoch seconds
+  string model = 3;                         // Model identifier
+  repeated Choice choices = 4;              // Generated completions
+  Usage usage = 5;                          // Token usage summary
+  string correlation_id = 6;                // Correlated request ID
+}
+
+// Health check request.
+message HealthCheckRequest {
+  string service = 1;
+}
+
+// Health check response.
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+  }
+  ServingStatus status = 1;
+}
+
+// Tessera Gateway core service interface.
+service GatewayService {
+  // Unary chat completion endpoint.
+  rpc ChatCompletion(ChatCompletionRequest) returns (ChatCompletionResponse);
+
+  // Standard health check probe.
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
