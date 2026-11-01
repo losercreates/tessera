@@ -1,0 +1,33 @@
+# Build directories
+build/
+bin/
+lib/
+out/
+dist/
+cmake-build-*/
+
+# C++ object and binary files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+
+# Compiler and IDE files
+.cache/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Spec Kit local state
+.specify/feature.json
+.specify/extensions/*/local-config.yml
+
+# Environment and secrets
+.env
+*.local
+
