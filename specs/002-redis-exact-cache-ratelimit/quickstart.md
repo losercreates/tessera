@@ -9,7 +9,7 @@
 ## Prerequisites
 
 * **Operating System**: Linux (Ubuntu 22.04+ or Debian 12+)
-* **Compiler**: GCC 13+ or Clang 17+
+* **Compiler**: GCC 13+ or Clang 17+ (C++20 compliant)
 * **Dependencies**: OpenSSL development headers (`libssl-dev`), Redis / Redis Stack (local port 6379 or container)
 
 ```bash
@@ -45,37 +45,38 @@ cmake --build build --parallel $(nproc)
 ## Verification Scenarios
 
 ### Scenario 1: Exact-Match Cache Retrieval (< 2ms p95)
-Run the exact-match cache benchmark:
+Run the exact-match cache benchmark measuring 10,000 queries:
 
 ```bash
-./build/cache_benchmark --requests=1000 --identical=true
+./build/cache_benchmark --iterations=10000
 ```
 **Expected Outcome**:
-* Request 1: Cache Miss ($\approx 10\text{ms}$ upstream invocation); writes to Redis.
-* Requests 2–1000: Cache Hit ($< 2\text{ms}$ p95 latency); returns cached response with `cache_hit: true` and zero backend compute.
+* Request 1: Cache Miss; writes to Redis.
+* Requests 2–10,000: Cache Hit ($< 2\text{ms}$ p95 latency); returns cached response with `cache_hit: true` and zero backend compute.
 
 ---
 
-### Scenario 2: Distributed Rate Limiting (Groq 30 RPM Quota)
-Run the rate limiter verification test:
+### Scenario 2: Distributed Rate Limiting (Groq 30 RPM Quota & Concurrency)
+Run the 200-thread atomic token-bucket rate limiter test:
 
 ```bash
-./build/rate_limiter_test --provider=groq --requests=40 --window-seconds=60
+./build/ratelimit_concurrency_test
 ```
 **Expected Outcome**:
-* Requests 1–30: Permitted (`allowed = true`).
-* Requests 31–40: Throttled (`allowed = false`, `Status: RESOURCE_EXHAUSTED`), returning `retry_after_ms`.
+* Exactly 30 requests permitted (`allowed = true`).
+* 170 concurrent requests throttled (`allowed = false`, `Status: RESOURCE_EXHAUSTED`), returning `retry_after_ms`.
+* Zero race condition overages.
 
 ---
 
 ### Scenario 3: Resilient Fail-Open Cache Degradation
-Run the resilience chaos test:
+Run integration test suite covering Redis network partition and disconnection:
 
 ```bash
-./build/resilience_test --simulate-redis-outage=true
+ctest --test-dir build -R integration_tests --output-on-failure
 ```
 **Expected Outcome**:
-* When Redis is unreachable, gateway logs a warning and transparently processes queries through the underlying completion backend with zero dropped client requests.
+* When Redis is unreachable or partitioned, the gateway logs a warning and transparently processes queries through the underlying completion backend with zero dropped client requests.
 
 ---
 
@@ -86,5 +87,4 @@ Submit a query with `--no-cache`:
 ./build/gateway_client --message "Generate dynamic forecast" --no-cache
 ```
 **Expected Outcome**:
-* Bypasses existing cache lookup, fetches a fresh completion, and updates the cache.
-
+* Bypasses existing cache lookup, fetches a fresh completion, and updates the cache (`cache_hit: false`).

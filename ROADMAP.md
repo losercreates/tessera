@@ -25,7 +25,7 @@ graph TD
 | Milestone | Feature Directory | Focus Area | Deliverables & Gates | Status |
 |---|---|---|---|---|
 | **M1** | [`specs/001-grpc-gateway-foundation`](specs/001-grpc-gateway-foundation) | API & Async Ingestion | Unified Protobuf contracts, async gRPC CompletionQueue server, CMake 3.25+ build, GTest baseline, CI workflow | ✅ Completed |
-| **M2** | [`specs/002-redis-exact-cache-ratelimit`](specs/002-redis-exact-cache-ratelimit) | Exact Cache & Quotas | Redis connection pool, SHA-256 exact match cache (p95 < 2ms), atomic Lua distributed token bucket (Groq/OpenRouter limits) | ⏳ Pending |
+| **M2** | [`specs/002-redis-exact-cache-ratelimit`](specs/002-redis-exact-cache-ratelimit) | Exact Cache & Quotas | Redis connection pool, SHA-256 exact match cache (p95 < 2ms), atomic Lua distributed token bucket (Groq/OpenRouter limits) | ✅ Completed |
 | **M3** | [`specs/003-onnx-semantic-cache`](specs/003-onnx-semantic-cache) | Local Semantic Inference | Embedded ONNX Runtime C++ (`all-MiniLM-L6-v2`, 384-d), vector normalization, RediSearch HNSW cosine search (threshold > 0.95) | ⏳ Pending |
 | **M4** | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | Resilience & Failover | 3-state Circuit Breaker (`CLOSED`, `OPEN`, `HALF-OPEN`), jittered backoff, Groq & OpenRouter clients, chaos mock outage tests | ⏳ Pending |
 | **M5** | [`specs/005-benchmarks-and-telemetry`](specs/005-benchmarks-and-telemetry) | Evaluation & Production | OpenTelemetry metrics, Docker Compose environment, 1,000 synthetic query evaluation harness (30% paraphrased duplicates) | ⏳ Pending |

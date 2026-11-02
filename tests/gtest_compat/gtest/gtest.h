@@ -100,6 +100,18 @@ inline void InitGoogleTest(int*, char**) {}
   }();                                                                                                      \
   void test_suite_name##_##test_name##_Test::TestBody()
 
+#define TEST_F(fixture_class, test_name)                                                                   \
+  class fixture_class##_##test_name##_Test : public fixture_class {                                        \
+   public:                                                                                                  \
+    void TestBody() override;                                                                               \
+  };                                                                                                        \
+  static bool fixture_class##_##test_name##_registered = []() {                                             \
+    ::testing::UnitTest::GetInstance()->RegisterTest(                                                       \
+        #fixture_class, #test_name, []() { return std::make_unique<fixture_class##_##test_name##_Test>(); }); \
+    return true;                                                                                            \
+  }();                                                                                                      \
+  void fixture_class##_##test_name##_Test::TestBody()
+
 #define EXPECT_TRUE(condition)                                                                             \
   do {                                                                                                      \
     if (!(condition)) {                                                                                     \

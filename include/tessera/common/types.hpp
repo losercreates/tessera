@@ -76,6 +76,7 @@ struct ChatCompletionRequest {
   std::optional<uint32_t> max_tokens{2048};
   bool stream{false};
   std::string correlation_id;
+  bool no_cache{false};
 
   // Approximate byte size of the request payload
   [[nodiscard]] size_t ByteSize() const noexcept;
@@ -100,6 +101,8 @@ struct ChatCompletionResponse {
   std::vector<Choice> choices;
   Usage usage;
   std::string correlation_id;
+  bool cache_hit{false};
+  std::string cache_tier{""};
 };
 
 enum class HealthStatus {

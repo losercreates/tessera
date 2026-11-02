@@ -25,8 +25,9 @@ if(ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-# Threading
+# Threading & OpenSSL
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Check for Protobuf and gRPC
 find_package(Protobuf QUIET)
@@ -47,10 +48,18 @@ set(CORE_SOURCES
   src/server/call_data.cpp
   src/server/gateway_server.cpp
   src/server/health_service.cpp
+  src/cache/sha256.cpp
+  src/cache/redis_client.cpp
+  src/cache/redis_pool.cpp
+  src/cache/exact_cache.cpp
+  src/cache/cached_backend.cpp
+  src/ratelimit/token_bucket.cpp
+  src/ratelimit/rate_limiter.cpp
+  src/ratelimit/rate_limited_backend.cpp
 )
 
 add_library(tessera_core STATIC ${CORE_SOURCES})
-target_link_libraries(tessera_core PUBLIC Threads::Threads)
+target_link_libraries(tessera_core PUBLIC Threads::Threads OpenSSL::Crypto)
 
 if(Protobuf_FOUND AND gRPC_FOUND)
   message(STATUS "Found system Protobuf and gRPC. Compiling protos/gateway.proto...")
@@ -88,6 +97,10 @@ target_link_libraries(gateway_server PRIVATE tessera_core)
 add_executable(gateway_client tools/gateway_client.cpp)
 target_link_libraries(gateway_client PRIVATE tessera_core)
 
+# Benchmark Tools
+add_executable(cache_benchmark tools/cache_benchmark.cpp)
+target_link_libraries(cache_benchmark PRIVATE tessera_core)
+
 # Testing
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
@@ -106,6 +119,11 @@ if(BUILD_TESTS)
     tests/unit/test_mock_backend.cpp
     tests/unit/test_health_check.cpp
     tests/unit/test_validation.cpp
+    tests/unit/test_sha256.cpp
+    tests/unit/test_exact_cache.cpp
+    tests/unit/test_rate_limiter.cpp
+    tests/unit/test_redis_pool.cpp
+    tests/unit/test_cache_bypass.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -119,12 +137,25 @@ if(BUILD_TESTS)
     tests/integration/test_server_async.cpp
     tests/integration/test_validation_integration.cpp
     tests/integration/test_graceful_shutdown.cpp
+    tests/integration/test_redis_integration.cpp
+    tests/integration/test_redis_resilience.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)
   if(GTest_FOUND)
     target_link_libraries(integration_tests PRIVATE GTest::gtest GTest::gtest_main)
   endif()
   add_test(NAME integration_tests COMMAND integration_tests)
+
+  # Rate Limit Concurrency Test (200 threads)
+  add_executable(ratelimit_concurrency_test
+    tests/test_main.cpp
+    tests/integration/test_ratelimit_concurrency.cpp
+  )
+  target_link_libraries(ratelimit_concurrency_test PRIVATE tessera_core)
+  if(GTest_FOUND)
+    target_link_libraries(ratelimit_concurrency_test PRIVATE GTest::gtest GTest::gtest_main)
+  endif()
+  add_test(NAME ratelimit_concurrency_test COMMAND ratelimit_concurrency_test)
 
   # Concurrency Load Test (500 clients)
   add_executable(concurrency_test
@@ -137,4 +168,3 @@ if(BUILD_TESTS)
   endif()
   add_test(NAME concurrency_test COMMAND concurrency_test)
 endif()
-
