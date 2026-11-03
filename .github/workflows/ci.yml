@@ -13,14 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       redis:
-        image: redis:7-alpine
+        image: redis/redis-stack-server:latest
         ports:
           - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     strategy:
       fail-fast: false
       matrix:
@@ -82,9 +77,13 @@ jobs:
         run: |
           ./build/ratelimit_concurrency_test
 
-      - name: Run Cache Benchmark (10,000 queries)
+      - name: Run Exact Cache Benchmark (10,000 queries)
         run: |
           ./build/cache_benchmark --iterations=10000
+
+      - name: Run Semantic Cache Benchmark (1,000 queries)
+        run: |
+          ./build/semantic_benchmark --iterations=1000
 
       - name: Verify CLI Tools & Health Check
         run: |

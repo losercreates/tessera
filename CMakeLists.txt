@@ -53,6 +53,11 @@ set(CORE_SOURCES
   src/cache/redis_pool.cpp
   src/cache/exact_cache.cpp
   src/cache/cached_backend.cpp
+  src/cache/embedding_engine.cpp
+  src/cache/onnx_embedding.cpp
+  src/cache/vector_store.cpp
+  src/cache/semantic_cache.cpp
+  src/cache/two_tier_cache.cpp
   src/ratelimit/token_bucket.cpp
   src/ratelimit/rate_limiter.cpp
   src/ratelimit/rate_limited_backend.cpp
@@ -101,6 +106,9 @@ target_link_libraries(gateway_client PRIVATE tessera_core)
 add_executable(cache_benchmark tools/cache_benchmark.cpp)
 target_link_libraries(cache_benchmark PRIVATE tessera_core)
 
+add_executable(semantic_benchmark tools/semantic_benchmark.cpp)
+target_link_libraries(semantic_benchmark PRIVATE tessera_core)
+
 # Testing
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
@@ -124,6 +132,10 @@ if(BUILD_TESTS)
     tests/unit/test_rate_limiter.cpp
     tests/unit/test_redis_pool.cpp
     tests/unit/test_cache_bypass.cpp
+    tests/unit/test_tokenizer.cpp
+    tests/unit/test_embedding.cpp
+    tests/unit/test_vector_store.cpp
+    tests/unit/test_two_tier_cache.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -139,6 +151,8 @@ if(BUILD_TESTS)
     tests/integration/test_graceful_shutdown.cpp
     tests/integration/test_redis_integration.cpp
     tests/integration/test_redis_resilience.cpp
+    tests/integration/test_semantic_integration.cpp
+    tests/integration/test_semantic_resilience.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)
   if(GTest_FOUND)

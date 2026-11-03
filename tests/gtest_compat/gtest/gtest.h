@@ -182,10 +182,27 @@ inline void InitGoogleTest(int*, char**) {}
     }                                                                                                       \
   } while (0)
 
+#define EXPECT_NEAR(val1, val2, abs_error)                                                                  \
+  do {                                                                                                      \
+    if (std::abs(static_cast<double>(val1) - static_cast<double>(val2)) > static_cast<double>(abs_error)) { \
+      std::cerr << __FILE__ << ":" << __LINE__ << ": Failure: EXPECT_NEAR(" #val1 ", " #val2 ") failed: " \
+                << (val1) << " vs " << (val2) << " with diff "                                             \
+                << std::abs(static_cast<double>(val1) - static_cast<double>(val2)) << " > "                 \
+                << (abs_error) << "\n";                                                                     \
+      ::testing::UnitTest::GetInstance()->MarkCurrentFailed();                                             \
+    }                                                                                                       \
+  } while (0)
+
+#define EXPECT_FLOAT_EQ(val1, val2) EXPECT_NEAR(val1, val2, 1e-5f)
+
 #define ASSERT_TRUE(cond) EXPECT_TRUE(cond)
 #define ASSERT_FALSE(cond) EXPECT_FALSE(cond)
 #define ASSERT_EQ(v1, v2) EXPECT_EQ(v1, v2)
 #define ASSERT_NE(v1, v2) EXPECT_NE(v1, v2)
+#define ASSERT_GE(v1, v2) EXPECT_GE(v1, v2)
+#define ASSERT_GT(v1, v2) EXPECT_GT(v1, v2)
+#define ASSERT_LE(v1, v2) EXPECT_LE(v1, v2)
+#define ASSERT_LT(v1, v2) EXPECT_LT(v1, v2)
 
 inline int RUN_ALL_TESTS() {
   return ::testing::UnitTest::GetInstance()->RunAllTests();

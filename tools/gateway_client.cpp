@@ -2,6 +2,10 @@
 #include "tessera/backend/mock_backend.hpp"
 #include "tessera/cache/cached_backend.hpp"
 #include "tessera/cache/exact_cache.hpp"
+#include "tessera/cache/semantic_cache.hpp"
+#include "tessera/cache/two_tier_cache.hpp"
+#include "tessera/cache/onnx_embedding.hpp"
+#include "tessera/cache/vector_store.hpp"
 #include "tessera/cache/redis_pool.hpp"
 #include "tessera/ratelimit/rate_limited_backend.hpp"
 #include "tessera/ratelimit/rate_limiter.hpp"
@@ -17,6 +21,7 @@ int main(int argc, char** argv) {
   std::string redis_host = "127.0.0.1";
   uint16_t redis_port = 6379;
   uint32_t cache_ttl = 86400;
+  float similarity_threshold = 0.95f;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -36,6 +41,8 @@ int main(int argc, char** argv) {
       redis_port = static_cast<uint16_t>(std::stoi(arg.substr(13)));
     } else if (arg.rfind("--cache-ttl=", 0) == 0) {
       cache_ttl = static_cast<uint32_t>(std::stoi(arg.substr(12)));
+    } else if (arg.rfind("--similarity=", 0) == 0) {
+      similarity_threshold = std::stof(arg.substr(13));
     }
   }
 
@@ -47,9 +54,15 @@ int main(int argc, char** argv) {
   pool_config.max_connections = 4;
 
   auto redis_pool = std::make_shared<tessera::RedisConnectionPool>(pool_config);
+  auto exact_cache = std::make_shared<tessera::ExactCacheService>(redis_pool, cache_ttl);
+  auto embedding_engine = std::make_shared<tessera::MockEmbeddingEngine>();
+  auto vector_store = std::make_shared<tessera::MockVectorIndex>();
+  auto semantic_cache = std::make_shared<tessera::SemanticCacheService>(
+      embedding_engine, vector_store, similarity_threshold, cache_ttl);
+  auto two_tier_cache = std::make_shared<tessera::TwoTierCacheService>(exact_cache, semantic_cache);
+
   auto base_backend = std::make_shared<tessera::MockEchoBackend>();
-  auto cache_service = std::make_shared<tessera::ExactCacheService>(redis_pool, cache_ttl);
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(base_backend, cache_service);
+  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(base_backend, two_tier_cache);
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
   auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, "groq");
 
