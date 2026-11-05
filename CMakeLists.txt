@@ -61,6 +61,10 @@ set(CORE_SOURCES
   src/ratelimit/token_bucket.cpp
   src/ratelimit/rate_limiter.cpp
   src/ratelimit/rate_limited_backend.cpp
+  src/routing/circuit_breaker.cpp
+  src/routing/failover_router.cpp
+  src/backend/upstream_client.cpp
+  src/backend/mock_upstream_client.cpp
 )
 
 add_library(tessera_core STATIC ${CORE_SOURCES})
@@ -136,6 +140,7 @@ if(BUILD_TESTS)
     tests/unit/test_embedding.cpp
     tests/unit/test_vector_store.cpp
     tests/unit/test_two_tier_cache.cpp
+    tests/unit/test_circuit_breaker.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -153,6 +158,8 @@ if(BUILD_TESTS)
     tests/integration/test_redis_resilience.cpp
     tests/integration/test_semantic_integration.cpp
     tests/integration/test_semantic_resilience.cpp
+    tests/integration/test_failover_integration.cpp
+    tests/integration/test_chaos_mock.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)
   if(GTest_FOUND)

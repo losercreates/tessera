@@ -1,5 +1,9 @@
 #include "tessera/server/gateway_server.hpp"
 #include "tessera/backend/mock_backend.hpp"
+#include "tessera/backend/upstream_client.hpp"
+#include "tessera/backend/mock_upstream_client.hpp"
+#include "tessera/routing/circuit_breaker.hpp"
+#include "tessera/routing/failover_router.hpp"
 #include "tessera/cache/cached_backend.hpp"
 #include "tessera/cache/exact_cache.hpp"
 #include "tessera/cache/semantic_cache.hpp"
@@ -71,9 +75,41 @@ int main(int argc, char** argv) {
       embedding_engine, vector_store, similarity_threshold, cache_ttl);
   auto two_tier_cache = std::make_shared<tessera::TwoTierCacheService>(exact_cache, semantic_cache);
 
-  // Pipeline: Base MockEchoBackend -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
-  auto base_backend = std::make_shared<tessera::MockEchoBackend>();
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(base_backend, two_tier_cache);
+  // Resilient Upstream Routing & Circuit Breakers:
+  // Primary: Groq (Llama 3.3 70B)
+  // Fallback: OpenRouter (Gemma-2-9B)
+  tessera::CircuitBreakerConfig groq_breaker_cfg;
+  groq_breaker_cfg.consecutive_failure_threshold = 3;
+  groq_breaker_cfg.base_cooldown_ms = 1000;
+  groq_breaker_cfg.max_cooldown_ms = 60000;
+  groq_breaker_cfg.trip_on_429 = true;
+
+  tessera::CircuitBreakerConfig openrouter_breaker_cfg;
+  openrouter_breaker_cfg.consecutive_failure_threshold = 3;
+  openrouter_breaker_cfg.base_cooldown_ms = 1000;
+  openrouter_breaker_cfg.max_cooldown_ms = 60000;
+  openrouter_breaker_cfg.trip_on_429 = true;
+
+  auto groq_breaker = std::make_shared<tessera::CircuitBreaker>(groq_breaker_cfg);
+  auto openrouter_breaker = std::make_shared<tessera::CircuitBreaker>(openrouter_breaker_cfg);
+
+  tessera::UpstreamProviderConfig groq_cfg;
+  groq_cfg.name = "groq";
+  groq_cfg.default_model = "llama-3.3-70b-versatile";
+  groq_cfg.endpoint = "https://api.groq.com/openai/v1/chat/completions";
+  auto groq_client = std::make_shared<tessera::HttpUpstreamClient>(groq_cfg);
+
+  tessera::UpstreamProviderConfig openrouter_cfg;
+  openrouter_cfg.name = "openrouter";
+  openrouter_cfg.default_model = "google/gemma-2-9b-it";
+  openrouter_cfg.endpoint = "https://openrouter.ai/api/v1/chat/completions";
+  auto openrouter_client = std::make_shared<tessera::HttpUpstreamClient>(openrouter_cfg);
+
+  auto failover_router = std::make_shared<tessera::FailoverRouter>(
+      groq_client, groq_breaker, openrouter_client, openrouter_breaker, "google/gemma-2-9b-it");
+
+  // Pipeline: FailoverRouter -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
+  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(failover_router, two_tier_cache);
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
   auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, "groq");
 
@@ -93,7 +129,8 @@ int main(int argc, char** argv) {
   std::cout << " Redis:      " << redis_host << ":" << redis_port << "\n";
   std::cout << " Cache TTL:  " << cache_ttl << "s                      \n";
   std::cout << " Min Sim:    " << similarity_threshold << "            \n";
-  std::cout << " Pipeline:   RateLimit -> TwoTierCache -> MockEcho     \n";
+  std::cout << " Upstream:   Groq (primary) -> OpenRouter (fallback)   \n";
+  std::cout << " Pipeline:   RateLimit -> TwoTierCache -> FailoverRouter\n";
   std::cout << "=======================================================\n\n";
 
   server.Wait();

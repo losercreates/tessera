@@ -1,5 +1,9 @@
 #include "tessera/server/gateway_server.hpp"
 #include "tessera/backend/mock_backend.hpp"
+#include "tessera/backend/upstream_client.hpp"
+#include "tessera/backend/mock_upstream_client.hpp"
+#include "tessera/routing/circuit_breaker.hpp"
+#include "tessera/routing/failover_router.hpp"
 #include "tessera/cache/cached_backend.hpp"
 #include "tessera/cache/exact_cache.hpp"
 #include "tessera/cache/semantic_cache.hpp"
@@ -22,11 +26,14 @@ int main(int argc, char** argv) {
   uint16_t redis_port = 6379;
   uint32_t cache_ttl = 86400;
   float similarity_threshold = 0.95f;
+  bool failover_demo = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--health") {
       check_health = true;
+    } else if (arg == "--failover-demo") {
+      failover_demo = true;
     } else if (arg.rfind("--message=", 0) == 0) {
       user_msg = arg.substr(10);
     } else if (arg == "--message" && i + 1 < argc) {
@@ -61,8 +68,37 @@ int main(int argc, char** argv) {
       embedding_engine, vector_store, similarity_threshold, cache_ttl);
   auto two_tier_cache = std::make_shared<tessera::TwoTierCacheService>(exact_cache, semantic_cache);
 
-  auto base_backend = std::make_shared<tessera::MockEchoBackend>();
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(base_backend, two_tier_cache);
+  tessera::CircuitBreakerConfig groq_breaker_cfg;
+  groq_breaker_cfg.consecutive_failure_threshold = 3;
+  groq_breaker_cfg.base_cooldown_ms = 1000;
+  groq_breaker_cfg.max_cooldown_ms = 60000;
+  groq_breaker_cfg.trip_on_429 = true;
+
+  tessera::CircuitBreakerConfig openrouter_breaker_cfg;
+  openrouter_breaker_cfg.consecutive_failure_threshold = 3;
+  openrouter_breaker_cfg.base_cooldown_ms = 1000;
+  openrouter_breaker_cfg.max_cooldown_ms = 60000;
+  openrouter_breaker_cfg.trip_on_429 = true;
+
+  auto groq_breaker = std::make_shared<tessera::CircuitBreaker>(groq_breaker_cfg);
+  auto openrouter_breaker = std::make_shared<tessera::CircuitBreaker>(openrouter_breaker_cfg);
+
+  auto groq_client = std::make_shared<tessera::MockUpstreamClient>(
+      "groq", "llama-3.3-70b-versatile", "https://api.groq.com/openai/v1/chat/completions");
+  auto openrouter_client = std::make_shared<tessera::MockUpstreamClient>(
+      "openrouter", "google/gemma-2-9b-it", "https://openrouter.ai/api/v1/chat/completions");
+
+  groq_client->SetDefaultResponseText("Groq completion for: " + user_msg);
+  openrouter_client->SetDefaultResponseText("OpenRouter fallback completion for: " + user_msg);
+
+  if (failover_demo) {
+    groq_client->EnqueueStatusCode(429, "Simulated Groq 429 quota exhaustion");
+  }
+
+  auto failover_router = std::make_shared<tessera::FailoverRouter>(
+      groq_client, groq_breaker, openrouter_client, openrouter_breaker, "google/gemma-2-9b-it");
+
+  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(failover_router, two_tier_cache);
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
   auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, "groq");
 
@@ -108,6 +144,10 @@ int main(int argc, char** argv) {
   std::cout << "Prompt Tokens:  " << resp.usage.prompt_tokens << "\n";
   std::cout << "Compl Tokens:   " << resp.usage.completion_tokens << "\n";
   std::cout << "Total Tokens:   " << resp.usage.total_tokens << "\n";
+  auto rstats = failover_router->GetStats();
+  std::cout << "Primary Calls:  " << rstats.primary_attempts << " (success=" << rstats.primary_successes << ")\n";
+  std::cout << "Failover Calls: " << rstats.failover_attempts << " (direct=" << rstats.direct_fallback_routes << ")\n";
+  std::cout << "Groq Circuit:   " << tessera::ToString(groq_breaker->GetState()) << "\n";
   std::cout << "---------------------------------\n";
 
   return 0;

@@ -7,6 +7,7 @@
 [![Milestone 1](https://img.shields.io/badge/Milestone%201-Completed-success.svg)](specs/001-grpc-gateway-foundation)
 [![Milestone 2](https://img.shields.io/badge/Milestone%202-Completed-success.svg)](specs/002-redis-exact-cache-ratelimit)
 [![Milestone 3](https://img.shields.io/badge/Milestone%203-Completed-success.svg)](specs/003-onnx-semantic-cache)
+[![Milestone 4](https://img.shields.io/badge/Milestone%204-Completed-success.svg)](specs/004-circuit-breaker-failover)
 
 A high-throughput, fault-tolerant Modern C++20 API gateway designed to sit between client microservices and external LLM providers (Groq, OpenRouter). It unifies chat completion contracts, enforces distributed rate limits, and caches responses semantically to reduce latency by up to 90% and ensure 99.99% uptime via automated failover.
 
@@ -44,7 +45,7 @@ graph TD
 | **Milestone 1** | ✅ **Completed** | [`specs/001-grpc-gateway-foundation`](specs/001-grpc-gateway-foundation) | Unified Protobuf contracts, async completion queue engine, mock backend, GTest suite, CI |
 | **Milestone 2** | ✅ **Completed** | [`specs/002-redis-exact-cache-ratelimit`](specs/002-redis-exact-cache-ratelimit) | Redis connection pooling, Tier 1 SHA-256 exact match cache (p95 < 0.2ms), atomic Lua token bucket |
 | **Milestone 3** | ✅ **Completed** | [`specs/003-onnx-semantic-cache`](specs/003-onnx-semantic-cache) | ONNX Runtime C++ (`all-MiniLM-L6-v2`), vector normalization, RediSearch HNSW cosine search (p95 < 0.25ms) |
-| **Milestone 4** | ⏳ *Next Up* | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | 3-state circuit breaker, Groq & OpenRouter HTTP/2 clients, chaos failover testing |
+| **Milestone 4** | ✅ **Completed** | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | 3-state circuit breaker, Groq & OpenRouter adapters, full jitter backoff, chaos failover testing |
 | **Milestone 5** | ⏳ *Planned* | [`specs/005-benchmarks-and-telemetry`](specs/005-benchmarks-and-telemetry) | OpenTelemetry instrumentation, Docker Compose, 1,000-query synthetic evaluation harness |
 
 See [`ROADMAP.md`](ROADMAP.md) for full delivery details and verification gates.
