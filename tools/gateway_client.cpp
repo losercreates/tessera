@@ -13,12 +13,14 @@
 #include "tessera/cache/redis_pool.hpp"
 #include "tessera/ratelimit/rate_limited_backend.hpp"
 #include "tessera/ratelimit/rate_limiter.hpp"
+#include "tessera/telemetry/telemetry_registry.hpp"
 #include "tessera/common/logger.hpp"
 #include <iostream>
 #include <string>
 
 int main(int argc, char** argv) {
   bool check_health = false;
+  bool show_metrics = false;
   std::string user_msg = "Hello, gateway!";
   std::string model = "llama-3.3-70b-versatile";
   bool no_cache = false;
@@ -32,6 +34,8 @@ int main(int argc, char** argv) {
     std::string arg = argv[i];
     if (arg == "--health") {
       check_health = true;
+    } else if (arg == "--metrics") {
+      show_metrics = true;
     } else if (arg == "--failover-demo") {
       failover_demo = true;
     } else if (arg.rfind("--message=", 0) == 0) {
@@ -149,6 +153,12 @@ int main(int argc, char** argv) {
   std::cout << "Failover Calls: " << rstats.failover_attempts << " (direct=" << rstats.direct_fallback_routes << ")\n";
   std::cout << "Groq Circuit:   " << tessera::ToString(groq_breaker->GetState()) << "\n";
   std::cout << "---------------------------------\n";
+
+  if (show_metrics) {
+    std::cout << "\n# --- Prometheus Metrics Exposition ---\n";
+    std::cout << tessera::TelemetryRegistry::Instance().ToPrometheusFormat();
+    std::cout << "# -------------------------------------\n";
+  }
 
   return 0;
 }

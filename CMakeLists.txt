@@ -65,6 +65,9 @@ set(CORE_SOURCES
   src/routing/failover_router.cpp
   src/backend/upstream_client.cpp
   src/backend/mock_upstream_client.cpp
+  src/telemetry/telemetry_registry.cpp
+  src/eval/evaluation_dataset.cpp
+  src/eval/evaluation_runner.cpp
 )
 
 add_library(tessera_core STATIC ${CORE_SOURCES})
@@ -113,6 +116,9 @@ target_link_libraries(cache_benchmark PRIVATE tessera_core)
 add_executable(semantic_benchmark tools/semantic_benchmark.cpp)
 target_link_libraries(semantic_benchmark PRIVATE tessera_core)
 
+add_executable(evaluation_harness tools/evaluation_harness.cpp)
+target_link_libraries(evaluation_harness PRIVATE tessera_core)
+
 # Testing
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
@@ -141,6 +147,7 @@ if(BUILD_TESTS)
     tests/unit/test_vector_store.cpp
     tests/unit/test_two_tier_cache.cpp
     tests/unit/test_circuit_breaker.cpp
+    tests/unit/test_telemetry.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -160,6 +167,7 @@ if(BUILD_TESTS)
     tests/integration/test_semantic_resilience.cpp
     tests/integration/test_failover_integration.cpp
     tests/integration/test_chaos_mock.cpp
+    tests/integration/test_eval_integration.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)
   if(GTest_FOUND)

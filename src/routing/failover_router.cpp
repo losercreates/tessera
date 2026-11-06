@@ -1,4 +1,5 @@
 #include "tessera/routing/failover_router.hpp"
+#include "tessera/telemetry/telemetry_registry.hpp"
 #include "tessera/common/logger.hpp"
 #include <chrono>
 #include <utility>
@@ -36,10 +37,13 @@ Status FailoverRouter::Complete(
     UpstreamRequest primary_req = BuildUpstreamRequest(request, primary_client_->ProviderName(), model);
 
     UpstreamResponse primary_resp = primary_client_->Execute(primary_req);
+    TelemetryRegistry::Instance().RecordUpstreamLatency(primary_client_->ProviderName(), primary_resp.latency_ms);
 
     if (primary_resp.IsSuccess()) {
       primary_successes_.fetch_add(1, std::memory_order_relaxed);
       primary_breaker_->RecordSuccess();
+      TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
+      TelemetryRegistry::Instance().IncrementRequestsTotal(primary_resp.model, primary_client_->ProviderName(), "200");
       PopulateResponse(primary_resp, request, response);
       return Status::OK();
     }
@@ -47,6 +51,8 @@ Status FailoverRouter::Complete(
     // Primary failed (429, 5xx, timeout, etc.)
     primary_failures_.fetch_add(1, std::memory_order_relaxed);
     primary_breaker_->RecordFailure(primary_resp.status_code, primary_resp.error_message);
+    TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
+    TelemetryRegistry::Instance().IncrementRequestsTotal(model, primary_client_->ProviderName(), std::to_string(primary_resp.status_code));
 
     TESSERA_LOG_WARN(
         "Primary upstream ({}) failed with status {}: {}. Triggering transparent failover to fallback ({}) for correlation {}",
@@ -56,6 +62,7 @@ Status FailoverRouter::Complete(
   } else {
     // Primary is OPEN or in HALF-OPEN concurrent probation
     direct_fallback_routes_.fetch_add(1, std::memory_order_relaxed);
+    TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
     TESSERA_LOG_INFO(
         "Primary circuit is non-serving (state={}). Directly routing request to fallback ({}) for correlation {}",
         ToString(primary_breaker_->GetState()), fallback_model_, request.correlation_id);
@@ -64,6 +71,7 @@ Status FailoverRouter::Complete(
   // 2. Fallback routing to secondary provider (OpenRouter)
   if (!fallback_breaker_->CanAttempt()) {
     all_providers_failed_.fetch_add(1, std::memory_order_relaxed);
+    TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
     TESSERA_LOG_ERROR(
         "All upstream providers unavailable (Primary and Fallback circuit breakers OPEN) for correlation {}",
         request.correlation_id);
@@ -73,16 +81,21 @@ Status FailoverRouter::Complete(
   // Remap model name to fallback model while preserving prompt payload
   UpstreamRequest fallback_req = BuildUpstreamRequest(request, fallback_client_->ProviderName(), fallback_model_);
   UpstreamResponse fallback_resp = fallback_client_->Execute(fallback_req);
+  TelemetryRegistry::Instance().RecordUpstreamLatency(fallback_client_->ProviderName(), fallback_resp.latency_ms);
 
   if (fallback_resp.IsSuccess()) {
     fallback_successes_.fetch_add(1, std::memory_order_relaxed);
     fallback_breaker_->RecordSuccess();
+    TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
+    TelemetryRegistry::Instance().IncrementRequestsTotal(fallback_resp.model, fallback_client_->ProviderName(), "200");
     PopulateResponse(fallback_resp, request, response);
     return Status::OK();
   }
 
   fallback_failures_.fetch_add(1, std::memory_order_relaxed);
   fallback_breaker_->RecordFailure(fallback_resp.status_code, fallback_resp.error_message);
+  TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
+  TelemetryRegistry::Instance().IncrementRequestsTotal(fallback_model_, fallback_client_->ProviderName(), std::to_string(fallback_resp.status_code));
   all_providers_failed_.fetch_add(1, std::memory_order_relaxed);
 
   TESSERA_LOG_ERROR(

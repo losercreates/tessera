@@ -17,9 +17,9 @@
 
 **Purpose**: Project initialization, directory structure, data models, and build system configuration.
 
-- [ ] T001 [P] Create directory structure for telemetry, evaluation harness, and deployment in `include/tessera/telemetry/`, `src/telemetry/`, `include/tessera/eval/`, `src/eval/`, and `deploy/`
-- [ ] T002 [P] Implement core telemetry domain types and histogram data structures in `include/tessera/telemetry/telemetry_types.hpp`
-- [ ] T003 Update `CMakeLists.txt` to register telemetry and evaluation sources, add `evaluation_harness` executable, and configure unit/integration test targets
+- [X] T001 [P] Create directory structure for telemetry, evaluation harness, and deployment in `include/tessera/telemetry/`, `src/telemetry/`, `include/tessera/eval/`, `src/eval/`, and `deploy/`
+- [X] T002 [P] Implement core telemetry domain types and histogram data structures in `include/tessera/telemetry/telemetry_types.hpp`
+- [X] T003 Update `CMakeLists.txt` to register telemetry and evaluation sources, add `evaluation_harness` executable, and configure unit/integration test targets
 
 ---
 
@@ -29,9 +29,9 @@
 
 **⚠️ CRITICAL**: No user story implementation can proceed until this phase is complete.
 
-- [ ] T004 [P] Define `TelemetryRegistry` class interface with thread-safe atomic counters, gauges, and histogram buckets in `include/tessera/telemetry/telemetry_registry.hpp`
-- [ ] T005 [P] Define `EvaluationDataset` and `EvaluationQuery` schema in `include/tessera/eval/evaluation_dataset.hpp`
-- [ ] T006 Implement synthetic evaluation dataset generation (700 base queries + 300 paraphrased duplicates across 5 domains) in `src/eval/evaluation_dataset.cpp`
+- [X] T004 [P] Define `TelemetryRegistry` class interface with thread-safe atomic counters, gauges, and histogram buckets in `include/tessera/telemetry/telemetry_registry.hpp`
+- [X] T005 [P] Define `EvaluationDataset` and `EvaluationQuery` schema in `include/tessera/eval/evaluation_dataset.hpp`
+- [X] T006 Implement synthetic evaluation dataset generation (700 base queries + 300 paraphrased duplicates across 5 domains) in `src/eval/evaluation_dataset.cpp`
 
 **Checkpoint**: Core telemetry registry and synthetic dataset ready. User story implementation can now begin.
 
@@ -44,12 +44,12 @@
 **Independent Test**: `./build/unit_tests --gtest_filter="TelemetryTest.*"`
 
 ### Tests for User Story 1 ⚠️
-- [ ] T007 [P] [US1] Create unit tests validating atomic metric counter increments, histogram distributions, circuit breaker gauges, and Prometheus text formatting in `tests/unit/test_telemetry.cpp`
+- [X] T007 [P] [US1] Create unit tests validating atomic metric counter increments, histogram distributions, circuit breaker gauges, and Prometheus text formatting in `tests/unit/test_telemetry.cpp`
 
 ### Implementation for User Story 1
-- [ ] T008 [US1] Implement `TelemetryRegistry` singleton and atomic metric collection methods in `src/telemetry/telemetry_registry.cpp`
-- [ ] T009 [US1] Implement Prometheus exposition format serialization (`ToPrometheusFormat()`) with `# HELP` and `# TYPE` annotations in `src/telemetry/telemetry_registry.cpp`
-- [ ] T010 [US1] Instrument telemetry hooks into `GatewayServer`, `CachedCompletionBackend`, and `FailoverRouter` to automatically record requests, hits, and latencies
+- [X] T008 [US1] Implement `TelemetryRegistry` singleton and atomic metric collection methods in `src/telemetry/telemetry_registry.cpp`
+- [X] T009 [US1] Implement Prometheus exposition format serialization (`ToPrometheusFormat()`) with `# HELP` and `# TYPE` annotations in `src/telemetry/telemetry_registry.cpp`
+- [X] T010 [US1] Instrument telemetry hooks into `GatewayServer`, `CachedCompletionBackend`, and `FailoverRouter` to automatically record requests, hits, and latencies
 
 **Checkpoint**: User Story 1 delivers full real-time observability verifiable via unit tests and Prometheus text output.
 
@@ -62,11 +62,11 @@
 **Independent Test**: `./build/integration_tests --gtest_filter="EvaluationHarnessTest.*"`
 
 ### Tests for User Story 2 ⚠️
-- [ ] T011 [P] [US2] Create integration tests validating evaluation harness execution, semantic cache interception, and p95 latency reduction assertions in `tests/integration/test_eval_integration.cpp`
+- [X] T011 [P] [US2] Create integration tests validating evaluation harness execution, semantic cache interception, and p95 latency reduction assertions in `tests/integration/test_eval_integration.cpp`
 
 ### Implementation for User Story 2
-- [ ] T012 [US2] Implement `EvaluationRunner` orchestrating sequential and multi-threaded workload execution in `include/tessera/eval/evaluation_runner.hpp` and `src/eval/evaluation_runner.cpp`
-- [ ] T013 [US2] Implement statistical latency analysis (p50, p90, p95, p99), token cost savings calculation, and report generators (Markdown and JSON) in `src/eval/evaluation_runner.cpp`
+- [X] T012 [US2] Implement `EvaluationRunner` orchestrating sequential and multi-threaded workload execution in `include/tessera/eval/evaluation_runner.hpp` and `src/eval/evaluation_runner.cpp`
+- [X] T013 [US2] Implement statistical latency analysis (p50, p90, p95, p99), token cost savings calculation, and report generators (Markdown and JSON) in `src/eval/evaluation_runner.cpp`
 
 **Checkpoint**: User Story 2 empirically proves the Two-Tier cache performance and cost reduction SLA.
 
@@ -78,9 +78,9 @@
 
 **Independent Test**: Validate configuration and multi-container build via `docker compose config`
 
-- [ ] T014 [P] [US3] Create multi-stage `Dockerfile` with builder and minimal runtime images in `deploy/Dockerfile` and root `Dockerfile`
-- [ ] T015 [P] [US3] Create `docker-compose.yml` orchestrating Redis Stack (`redis/redis-stack-server`) and Tessera Gateway with health check dependencies and port mappings
-- [ ] T016 [US3] Create sample environment file `deploy/.env.example` with configurable Redis, gRPC, and metrics port options
+- [X] T014 [P] [US3] Create multi-stage `Dockerfile` with builder and minimal runtime images in `deploy/Dockerfile` and root `Dockerfile`
+- [X] T015 [P] [US3] Create `docker-compose.yml` orchestrating Redis Stack (`redis/redis-stack-server`) and Tessera Gateway with health check dependencies and port mappings
+- [X] T016 [US3] Create sample environment file `deploy/.env.example` with configurable Redis, gRPC, and metrics port options
 
 **Checkpoint**: User Story 3 delivers push-button multi-container deployment ready for local and cloud environments.
 
@@ -92,9 +92,9 @@
 
 **Independent Test**: `./build/evaluation_harness --queries=1000` and memory RSS verification
 
-- [ ] T017 [P] [US4] Implement standalone `evaluation_harness` CLI executable in `tools/evaluation_harness.cpp` supporting `--queries`, `--threads`, `--output-json`, and `--verbose`
-- [ ] T018 [US4] Implement resident memory (RSS) tracking verifying memory stays strictly $< 500\text{MB}$ RAM during 1,000-query evaluation in `tools/evaluation_harness.cpp`
-- [ ] T019 [US4] Update `tools/gateway_client.cpp` with `--metrics` flag to fetch and display Prometheus metrics
+- [X] T017 [P] [US4] Implement standalone `evaluation_harness` CLI executable in `tools/evaluation_harness.cpp` supporting `--queries`, `--threads`, `--output-json`, and `--verbose`
+- [X] T018 [US4] Implement resident memory (RSS) tracking verifying memory stays strictly $< 500\text{MB}$ RAM during 1,000-query evaluation in `tools/evaluation_harness.cpp`
+- [X] T019 [US4] Update `tools/gateway_client.cpp` with `--metrics` flag to fetch and display Prometheus metrics
 
 **Checkpoint**: All 4 user stories are fully implemented, integrated, and verified offline.
 
@@ -104,9 +104,9 @@
 
 **Purpose**: Comprehensive verification, documentation updates, and compliance checks across all user stories.
 
-- [ ] T020 [P] Run full CTest suite (`unit_tests`, `integration_tests`, `ratelimit_concurrency_test`, `concurrency_test`) with zero leaks under AddressSanitizer and UndefinedBehaviorSanitizer
-- [ ] T021 [P] Update `README.md` and `ROADMAP.md` documenting Milestone 5 completion, observability endpoints, and evaluation harness benchmark results
-- [ ] T022 Execute quickstart validation scenarios per `specs/005-benchmarks-and-telemetry/quickstart.md`
+- [X] T020 [P] Run full CTest suite (`unit_tests`, `integration_tests`, `ratelimit_concurrency_test`, `concurrency_test`) with zero leaks under AddressSanitizer and UndefinedBehaviorSanitizer
+- [X] T021 [P] Update `README.md` and `ROADMAP.md` documenting Milestone 5 completion, observability endpoints, and evaluation harness benchmark results
+- [X] T022 Execute quickstart validation scenarios per `specs/005-benchmarks-and-telemetry/quickstart.md`
 
 ---
 

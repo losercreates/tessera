@@ -1,4 +1,5 @@
 #include "tessera/cache/cached_backend.hpp"
+#include "tessera/telemetry/telemetry_registry.hpp"
 #include "tessera/common/logger.hpp"
 
 namespace tessera {
@@ -41,6 +42,7 @@ Status CachedCompletionBackend::Complete(
       auto lookup = two_tier_cache_->Lookup(request);
       if (lookup.hit) {
         hit_count_.fetch_add(1, std::memory_order_relaxed);
+        TelemetryRegistry::Instance().IncrementCacheHitsTotal(lookup.cache_tier);
         *response = std::move(lookup.response);
         if (!request.correlation_id.empty()) {
           response->correlation_id = request.correlation_id;
@@ -53,6 +55,7 @@ Status CachedCompletionBackend::Complete(
       auto lookup = exact_cache_->Lookup(request);
       if (lookup.hit) {
         hit_count_.fetch_add(1, std::memory_order_relaxed);
+        TelemetryRegistry::Instance().IncrementCacheHitsTotal("exact");
         *response = std::move(lookup.response);
         if (!request.correlation_id.empty()) {
           response->correlation_id = request.correlation_id;
@@ -63,6 +66,7 @@ Status CachedCompletionBackend::Complete(
   }
 
   miss_count_.fetch_add(1, std::memory_order_relaxed);
+  TelemetryRegistry::Instance().IncrementCacheHitsTotal("miss");
 
   // 2. Cache miss or bypass: forward to inner backend
   if (inner_backend_ == nullptr) {

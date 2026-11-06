@@ -1,0 +1,67 @@
+version: "3.8"
+
+networks:
+  tessera-net:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+
+services:
+  # ----------------------------------------------------------------------------
+  # Redis Stack Server (RediSearch HNSW Vector Index & RedisJSON)
+  # ----------------------------------------------------------------------------
+  redis-stack:
+    image: redis/redis-stack-server:latest
+    container_name: tessera-redis-stack
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - tessera-net
+    environment:
+      - REDIS_ARGS=--save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Tessera AI Gateway (High-Performance C++20 Inference Gateway)
+  # ----------------------------------------------------------------------------
+  tessera-gateway:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: tessera-gateway
+    ports:
+      - "${GATEWAY_PORT:-50051}:50051"
+      - "${METRICS_PORT:-9090}:9090"
+    networks:
+      - tessera-net
+    environment:
+      - REDIS_HOST=redis-stack
+      - REDIS_PORT=6379
+      - GATEWAY_PORT=${GATEWAY_PORT:-50051}
+      - METRICS_PORT=${METRICS_PORT:-9090}
+      - WORKER_THREADS=${WORKER_THREADS:-8}
+      - CACHE_TTL=${CACHE_TTL:-86400}
+      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.95}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    depends_on:
+      redis-stack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/gateway_client", "--health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
