@@ -84,7 +84,7 @@ struct UpstreamResponse {
 
 struct UpstreamProviderConfig {
   std::string name = "groq";
-  std::string default_model = "llama-3.3-70b-versatile";
+  std::string default_model = "llama-3.1-8b-instant";
   std::string endpoint = "https://api.groq.com/openai/v1/chat/completions";
   std::string api_key;
   CircuitBreakerConfig circuit_config;

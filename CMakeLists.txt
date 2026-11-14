@@ -71,7 +71,7 @@ set(CORE_SOURCES
 )
 
 add_library(tessera_core STATIC ${CORE_SOURCES})
-target_link_libraries(tessera_core PUBLIC Threads::Threads OpenSSL::Crypto)
+target_link_libraries(tessera_core PUBLIC Threads::Threads OpenSSL::SSL OpenSSL::Crypto)
 
 if(Protobuf_FOUND AND gRPC_FOUND)
   message(STATUS "Found system Protobuf and gRPC. Compiling protos/gateway.proto...")

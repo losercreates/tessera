@@ -25,6 +25,26 @@ int main(int argc, char** argv) {
   float similarity_threshold = 0.95f;
   bool use_mock_redis = false;
 
+  // Initialize defaults from environment variables if present
+  if (const char* env_host = std::getenv("REDIS_HOST")) {
+    redis_host = env_host;
+  }
+  if (const char* env_port = std::getenv("REDIS_PORT")) {
+    redis_port = static_cast<uint16_t>(std::stoi(env_port));
+  }
+  if (const char* env_gw_port = std::getenv("GATEWAY_PORT")) {
+    config.port = static_cast<uint16_t>(std::stoi(env_gw_port));
+  }
+  if (const char* env_threads = std::getenv("WORKER_THREADS")) {
+    config.worker_threads = static_cast<uint32_t>(std::stoi(env_threads));
+  }
+  if (const char* env_ttl = std::getenv("CACHE_TTL")) {
+    cache_ttl = static_cast<uint32_t>(std::stoi(env_ttl));
+  }
+  if (const char* env_sim = std::getenv("SIMILARITY_THRESHOLD")) {
+    similarity_threshold = std::stof(env_sim);
+  }
+
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg.rfind("--port=", 0) == 0) {
@@ -93,20 +113,32 @@ int main(int argc, char** argv) {
   auto groq_breaker = std::make_shared<tessera::CircuitBreaker>(groq_breaker_cfg);
   auto openrouter_breaker = std::make_shared<tessera::CircuitBreaker>(openrouter_breaker_cfg);
 
+  std::string groq_key;
+  std::string openrouter_key;
+  if (const char* k = std::getenv("GROQ_API_KEY")) groq_key = k;
+  if (const char* k = std::getenv("OPENROUTER_API_KEY")) openrouter_key = k;
+
+  std::string groq_model = "llama-3.1-8b-instant";
+  std::string openrouter_model = "openrouter/free";
+  if (const char* m = std::getenv("GROQ_MODEL")) groq_model = m;
+  if (const char* fm = std::getenv("OPENROUTER_MODEL")) openrouter_model = fm;
+
   tessera::UpstreamProviderConfig groq_cfg;
   groq_cfg.name = "groq";
-  groq_cfg.default_model = "llama-3.3-70b-versatile";
+  groq_cfg.default_model = groq_model;
   groq_cfg.endpoint = "https://api.groq.com/openai/v1/chat/completions";
+  groq_cfg.api_key = groq_key;
   auto groq_client = std::make_shared<tessera::HttpUpstreamClient>(groq_cfg);
 
   tessera::UpstreamProviderConfig openrouter_cfg;
   openrouter_cfg.name = "openrouter";
-  openrouter_cfg.default_model = "google/gemma-2-9b-it";
+  openrouter_cfg.default_model = openrouter_model;
   openrouter_cfg.endpoint = "https://openrouter.ai/api/v1/chat/completions";
+  openrouter_cfg.api_key = openrouter_key;
   auto openrouter_client = std::make_shared<tessera::HttpUpstreamClient>(openrouter_cfg);
 
   auto failover_router = std::make_shared<tessera::FailoverRouter>(
-      groq_client, groq_breaker, openrouter_client, openrouter_breaker, "google/gemma-2-9b-it");
+      groq_client, groq_breaker, openrouter_client, openrouter_breaker, openrouter_model);
 
   // Pipeline: FailoverRouter -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
   auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(failover_router, two_tier_cache);
@@ -129,7 +161,8 @@ int main(int argc, char** argv) {
   std::cout << " Redis:      " << redis_host << ":" << redis_port << "\n";
   std::cout << " Cache TTL:  " << cache_ttl << "s                      \n";
   std::cout << " Min Sim:    " << similarity_threshold << "            \n";
-  std::cout << " Upstream:   Groq (primary) -> OpenRouter (fallback)   \n";
+  std::cout << " Upstream:   " << (groq_key.empty() ? "Groq (offline mock)" : "Groq [LIVE HTTPS]")
+            << " -> " << (openrouter_key.empty() ? "OpenRouter (offline mock)" : "OpenRouter [LIVE HTTPS]") << "\n";
   std::cout << " Pipeline:   RateLimit -> TwoTierCache -> FailoverRouter\n";
   std::cout << "=======================================================\n\n";
 

@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <poll.h>
 #include <cmath>
@@ -116,18 +117,20 @@ SocketRedisClient::~SocketRedisClient() {
 bool SocketRedisClient::Connect() {
   if (IsConnected()) return true;
 
-  socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (socket_fd_ < 0) {
+  struct addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  struct addrinfo* res = nullptr;
+  std::string port_str = std::to_string(port_);
+  int gai_err = getaddrinfo(host_.c_str(), port_str.c_str(), &hints, &res);
+  if (gai_err != 0 || res == nullptr) {
     return false;
   }
 
-  struct sockaddr_in serv_addr{};
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(port_);
-
-  if (inet_pton(AF_INET, host_.c_str(), &serv_addr.sin_addr) <= 0) {
-    close(socket_fd_);
-    socket_fd_ = -1;
+  socket_fd_ = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  if (socket_fd_ < 0) {
+    freeaddrinfo(res);
     return false;
   }
 
@@ -138,13 +141,15 @@ bool SocketRedisClient::Connect() {
   setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(socket_fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-  if (connect(socket_fd_, reinterpret_cast<struct sockaddr*>(&serv_addr), sizeof(serv_addr)) < 0) {
+  if (connect(socket_fd_, res->ai_addr, res->ai_addrlen) < 0) {
     close(socket_fd_);
     socket_fd_ = -1;
     connected_ = false;
+    freeaddrinfo(res);
     return false;
   }
 
+  freeaddrinfo(res);
   connected_ = true;
   read_buffer_.clear();
   return true;

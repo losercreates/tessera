@@ -44,6 +44,8 @@ services:
       - "${METRICS_PORT:-9090}:9090"
     networks:
       - tessera-net
+    env_file:
+      - ../.env
     environment:
       - REDIS_HOST=redis-stack
       - REDIS_PORT=6379

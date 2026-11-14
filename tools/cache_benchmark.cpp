@@ -14,6 +14,14 @@ int main(int argc, char** argv) {
   size_t iterations = 10000;
   std::string redis_host = "127.0.0.1";
   uint16_t redis_port = 6379;
+
+  // Initialize defaults from environment variables if present
+  if (const char* env_host = std::getenv("REDIS_HOST")) {
+    redis_host = env_host;
+  }
+  if (const char* env_port = std::getenv("REDIS_PORT")) {
+    redis_port = static_cast<uint16_t>(std::stoi(env_port));
+  }
   bool force_mock = true;
 
   for (int i = 1; i < argc; ++i) {
