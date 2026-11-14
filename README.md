@@ -9,6 +9,7 @@
 [![Milestone 3](https://img.shields.io/badge/Milestone%203-Completed-success.svg)](specs/003-onnx-semantic-cache)
 [![Milestone 4](https://img.shields.io/badge/Milestone%204-Completed-success.svg)](specs/004-circuit-breaker-failover)
 [![Milestone 5](https://img.shields.io/badge/Milestone%205-Completed-success.svg)](specs/005-benchmarks-and-telemetry)
+[![Milestone 6](https://img.shields.io/badge/Milestone%206-Completed-success.svg)](specs/006-ci-matrix-container-release)
 A high-throughput, fault-tolerant Modern C++20 API gateway designed to sit between client microservices and external LLM providers (Groq, OpenRouter). It unifies chat completion contracts, enforces distributed rate limits, and caches responses semantically to reduce latency by up to 90% and ensure 99.99% uptime via automated failover.
 
 ---
@@ -47,6 +48,7 @@ graph TD
 | **Milestone 3** | ✅ **Completed** | [`specs/003-onnx-semantic-cache`](specs/003-onnx-semantic-cache) | ONNX Runtime C++ (`all-MiniLM-L6-v2`), vector normalization, RediSearch HNSW cosine search (p95 < 0.25ms) |
 | **Milestone 4** | ✅ **Completed** | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | 3-state circuit breaker, Groq & OpenRouter adapters, full jitter backoff, chaos failover testing |
 | **Milestone 5** | ✅ **Completed** | [`specs/005-benchmarks-and-telemetry`](specs/005-benchmarks-and-telemetry) | OpenTelemetry metrics, Prometheus exporter, Docker Compose, 1,000-query synthetic evaluation harness |
+| **Milestone 6** | ✅ **Completed** | [`specs/006-ci-matrix-container-release`](specs/006-ci-matrix-container-release) | Dual-compiler CI matrix (GCC 13 & Clang 17 ASan/UBSan), automated 1,000-query benchmark gating, Docker Compose smoke tests |
 
 See [`ROADMAP.md`](ROADMAP.md) for full delivery details and verification gates.
 
@@ -174,6 +176,9 @@ curl -s http://localhost:9090/metrics
 │   ├── unit/                      # GoogleTest unit tests (types, validation, health)
 │   ├── integration/               # Integration tests (async completions, graceful drain)
 │   └── test_main.cpp              # Test runner entrypoint
+├── scripts/
+│   ├── verify_ci_gates.py         # Automated evaluation SLA gate validator
+│   └── verify_metrics_format.sh   # Prometheus text exposition format validator
 ├── specs/                         # Spec Kit feature specs, plans, and task lists
 └── ROADMAP.md                     # Milestone tracking board
 ```

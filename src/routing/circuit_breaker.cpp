@@ -168,9 +168,10 @@ std::chrono::milliseconds CircuitBreaker::CalculateBackoffWithJitter(uint32_t fa
     return std::chrono::milliseconds(0);
   }
 
-  // AWS Full Jitter: random uniform between 0 and capped backoff
+  // AWS Jitter with minimum cooldown floor to prevent instantaneous 0ms probe race
+  uint64_t min_cooldown = std::min<uint64_t>(capped, std::max<uint64_t>(10, config_.base_cooldown_ms / 2));
   thread_local std::mt19937_64 rng(std::random_device{}());
-  std::uniform_int_distribution<uint64_t> dist(0, capped);
+  std::uniform_int_distribution<uint64_t> dist(min_cooldown, capped);
   uint64_t jittered = dist(rng);
 
   return std::chrono::milliseconds(jittered);

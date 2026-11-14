@@ -29,6 +29,7 @@ graph TD
 | **M3** | [`specs/003-onnx-semantic-cache`](specs/003-onnx-semantic-cache) | Local Semantic Inference | Embedded ONNX Runtime C++ (`all-MiniLM-L6-v2`, 384-d), vector normalization, RediSearch HNSW cosine search (threshold > 0.95) | ✅ Completed |
 | **M4** | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | Resilience & Failover | 3-state Circuit Breaker (`CLOSED`, `OPEN`, `HALF-OPEN`), jittered backoff, Groq & OpenRouter clients, chaos mock outage tests | ✅ Completed |
 | **M5** | [`specs/005-benchmarks-and-telemetry`](specs/005-benchmarks-and-telemetry) | Evaluation & Production | OpenTelemetry metrics, Docker Compose environment, 1,000 synthetic query evaluation harness (30% paraphrased duplicates) | ✅ Completed |
+| **M6** | [`specs/006-ci-matrix-container-release`](specs/006-ci-matrix-container-release) | CI/CD & Automated Release | GitHub Actions dual-compiler matrix (GCC 13 & Clang 17 ASan/UBSan), automated 1,000-query benchmark gating, Prometheus metrics validator, Docker Compose smoke test | ✅ Completed |
 
 ---
 
@@ -58,4 +59,9 @@ graph TD
 - **Goals**: End-to-end evaluation, observability, and reproducible deployment.
 - **Key Artifacts**: OpenTelemetry instrumentation (`gateway_requests_total`, `gateway_cache_hits_total`, `circuit_breaker_state`, `upstream_latency_ms`), Prometheus text exporter, multi-stage `Dockerfile`, `docker-compose.yml`, standalone `evaluation_harness` CLI tool.
 - **Verification Gate**: 1,000-query benchmark run confirming 95.6% p95 latency reduction on warm cached queries, 99.0% token cost savings, > 5,400 RPS throughput, and resident memory bounded at ~55 MB RAM (< 500 MB limit) with zero sanitizer violations.
+
+### Milestone 6 (M6): CI Matrix & Automated Container Release Pipeline
+- **Goals**: Production CI/CD automation, compiler matrix verification, and release smoke testing.
+- **Key Artifacts**: `.github/workflows/ci.yml` dual-compiler matrix (GCC 13 Release vs Clang 17 Debug with ASan/UBSan), automated 1,000-query benchmark gating (`scripts/verify_ci_gates.py`), Prometheus metrics validator (`scripts/verify_metrics_format.sh`), artifact publishing, and automated Docker Compose container smoke testing job.
+- **Verification Gate**: 100% passing CI matrix across compilers, zero leaks under AddressSanitizer, automated SLA gate enforcement, and passing in-container health probes.
 

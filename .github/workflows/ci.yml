@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ============================================================================
+  # Job 1: Dual-Compiler Build, Test, Sanitizer & Evaluation Matrix
+  # ============================================================================
   build-and-test:
     name: "Build & Test (${{ matrix.compiler }}, Sanitizer: ${{ matrix.sanitizer }})"
     runs-on: ubuntu-latest
@@ -44,7 +47,7 @@ jobs:
             libprotobuf-dev protobuf-compiler \
             libgrpc++-dev protobuf-compiler-grpc || true
 
-      - name: Setup Compiler
+      - name: Setup Compiler Environment
         run: |
           echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
@@ -85,8 +88,73 @@ jobs:
         run: |
           ./build/semantic_benchmark --iterations=1000
 
+      - name: Execute Synthetic 1,000-Query Evaluation Harness
+        run: |
+          ./build/evaluation_harness --queries=1000 --threads=4 --output-json=eval_report.json
+
+      - name: Enforce CI Evaluation SLA Quality Gates
+        run: |
+          python3 scripts/verify_ci_gates.py eval_report.json
+
+      - name: Validate Prometheus Metrics Exposition
+        run: |
+          bash scripts/verify_metrics_format.sh
+
+      - name: Archive Evaluation Benchmark Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-report-${{ matrix.compiler }}
+          path: eval_report.json
+          retention-days: 14
+
       - name: Verify CLI Tools & Health Check
         run: |
           ./build/gateway_client --health
           ./build/gateway_client --message "CI validation message"
           ./build/gateway_client --message "CI validation message" --no-cache
+
+  # ============================================================================
+  # Job 2: Multi-Stage Container Build & Live Compose Smoke Test
+  # ============================================================================
+  container-smoke-test:
+    name: "Container Build & Compose Smoke Test"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Production Multi-Stage Container Image
+        run: |
+          docker build -f deploy/Dockerfile -t tessera-gateway:ci .
+
+      - name: Launch Multi-Container Stack via Docker Compose
+        run: |
+          docker compose -f deploy/docker-compose.yml up -d
+
+      - name: Wait for Stack Containers to Become Healthy
+        run: |
+          echo "Waiting for containers to enter healthy state..."
+          for i in {1..30}; do
+            STATUS_REDIS=$(docker inspect --format='{{json .State.Health.Status}}' tessera-redis-stack 2>/dev/null || echo '"unknown"')
+            STATUS_GATEWAY=$(docker inspect --format='{{json .State.Health.Status}}' tessera-gateway 2>/dev/null || echo '"unknown"')
+            echo "Attempt $i/30: redis=$STATUS_REDIS, gateway=$STATUS_GATEWAY"
+            if [ "$STATUS_REDIS" = '"healthy"' ] && [ "$STATUS_GATEWAY" = '"healthy"' ]; then
+              echo "Both containers healthy!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Execute In-Container Health Probe
+        run: |
+          docker exec tessera-gateway /usr/local/bin/gateway_client --health
+
+      - name: Execute In-Container Query with Metrics
+        run: |
+          docker exec tessera-gateway /usr/local/bin/gateway_client --message "Docker container smoke test query" --metrics
+
+      - name: Tear Down Multi-Container Stack
+        if: always()
+        run: |
+          docker compose -f deploy/docker-compose.yml down -v
