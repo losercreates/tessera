@@ -63,6 +63,9 @@ set(CORE_SOURCES
   src/ratelimit/rate_limited_backend.cpp
   src/routing/circuit_breaker.cpp
   src/routing/failover_router.cpp
+  src/routing/cascade_router.cpp
+  src/routing/model_router.cpp
+  src/routing/provider_registry.cpp
   src/backend/upstream_client.cpp
   src/backend/mock_upstream_client.cpp
   src/telemetry/telemetry_registry.cpp
@@ -148,6 +151,9 @@ if(BUILD_TESTS)
     tests/unit/test_two_tier_cache.cpp
     tests/unit/test_circuit_breaker.cpp
     tests/unit/test_telemetry.cpp
+    tests/unit/test_provider_registry.cpp
+    tests/unit/test_cascade_router.cpp
+    tests/unit/test_model_router.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -167,6 +173,8 @@ if(BUILD_TESTS)
     tests/integration/test_semantic_resilience.cpp
     tests/integration/test_failover_integration.cpp
     tests/integration/test_chaos_mock.cpp
+    tests/integration/test_multi_provider_cascade.cpp
+    tests/integration/test_provider_rate_isolation.cpp
     tests/integration/test_eval_integration.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)

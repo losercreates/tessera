@@ -30,6 +30,7 @@ graph TD
 | **M4** | [`specs/004-circuit-breaker-failover`](specs/004-circuit-breaker-failover) | Resilience & Failover | 3-state Circuit Breaker (`CLOSED`, `OPEN`, `HALF-OPEN`), jittered backoff, Groq & OpenRouter clients, chaos mock outage tests | ✅ Completed |
 | **M5** | [`specs/005-benchmarks-and-telemetry`](specs/005-benchmarks-and-telemetry) | Evaluation & Production | OpenTelemetry metrics, Docker Compose environment, 1,000 synthetic query evaluation harness (30% paraphrased duplicates) | ✅ Completed |
 | **M6** | [`specs/006-ci-matrix-container-release`](specs/006-ci-matrix-container-release) | CI/CD & Automated Release | GitHub Actions dual-compiler matrix (GCC 13 & Clang 17 ASan/UBSan), automated 1,000-query benchmark gating, Prometheus metrics validator, Docker Compose smoke test | ✅ Completed |
+| **M7** | [`specs/007-provider-agnostic-routing`](specs/007-provider-agnostic-routing) | Extensible Routing & Cascades | Provider Registry, N-tier CascadeRouter, dynamic ModelRouter, isolated per-provider rate limits & circuit breakers, dynamic Prometheus metrics | ✅ Completed |
 
 ---
 
@@ -64,4 +65,9 @@ graph TD
 - **Goals**: Production CI/CD automation, compiler matrix verification, and release smoke testing.
 - **Key Artifacts**: `.github/workflows/ci.yml` dual-compiler matrix (GCC 13 Release vs Clang 17 Debug with ASan/UBSan), automated 1,000-query benchmark gating (`scripts/verify_ci_gates.py`), Prometheus metrics validator (`scripts/verify_metrics_format.sh`), artifact publishing, and automated Docker Compose container smoke testing job.
 - **Verification Gate**: 100% passing CI matrix across compilers, zero leaks under AddressSanitizer, automated SLA gate enforcement, and passing in-container health probes.
+
+### Milestone 7 (M7): Provider-Agnostic Routing & Dynamic Model Cascade
+- **Goals**: Decouple gateway from hardcoded upstreams into an extensible catalog supporting arbitrary OpenAI-compatible platforms (cloud & local Ollama/vLLM) with $N$-tier cascades.
+- **Key Artifacts**: `ProviderRegistry`, `ModelRouter`, `CascadeRouter`, dynamic `RateLimitedBackend` quota resolver, isolated per-provider Redis rate limits and circuit breakers, dynamic Prometheus labels.
+- **Verification Gate**: 100% unit and integration test pass rate under ASan/UBSan; chaos 3-tier failover with zero dropped requests; independent per-provider quota and breaker isolation under multi-threaded concurrency.
 

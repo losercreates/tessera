@@ -17,8 +17,8 @@
 
 **Purpose**: Project declarations, CMake configuration, and shared type definitions
 
-- [ ] T001 [P] Declare ProviderConfig, CascadeTarget, and CascadeRoute structures in `include/tessera/routing/circuit_types.hpp`
-- [ ] T002 [P] Update build targets and add new test executables in `CMakeLists.txt`
+- [x] T001 [P] Declare ProviderConfig, CascadeTarget, and CascadeRoute structures in `include/tessera/routing/circuit_types.hpp`
+- [x] T002 [P] Update build targets and add new test executables in `CMakeLists.txt`
 
 ---
 
@@ -28,9 +28,9 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this foundational phase is complete
 
-- [ ] T003 Implement ProviderConfig validation and default circuit breaker settings in `include/tessera/routing/circuit_types.hpp`
-- [ ] T004 [P] Update TelemetryRegistry to dynamically instantiate provider gauges and histograms on demand in `include/tessera/telemetry/telemetry_registry.hpp` and `src/telemetry/telemetry_registry.cpp`
-- [ ] T005 [P] Implement dynamic provider quota resolution in RateLimitedBackend in `include/tessera/ratelimit/rate_limited_backend.hpp` and `src/ratelimit/rate_limited_backend.cpp`
+- [x] T003 Implement ProviderConfig validation and default circuit breaker settings in `include/tessera/routing/circuit_types.hpp`
+- [x] T004 [P] Update TelemetryRegistry to dynamically instantiate provider gauges and histograms on demand in `include/tessera/telemetry/telemetry_registry.hpp` and `src/telemetry/telemetry_registry.cpp`
+- [x] T005 [P] Implement dynamic provider quota resolution in RateLimitedBackend in `include/tessera/ratelimit/rate_limited_backend.hpp` and `src/ratelimit/rate_limited_backend.cpp`
 
 **Checkpoint**: Foundational types, telemetry, and rate limiting abstractions ready.
 
@@ -43,13 +43,13 @@
 **Independent Test**: Register a custom local provider in configuration; dispatch a request to it and verify successful response without modifying gateway source code.
 
 ### Tests for User Story 1
-- [ ] T006 [P] [US1] Unit test verifying ProviderRegistry registration, environment parsing, and default fallback in `tests/unit/test_provider_registry.cpp`
+- [x] T006 [P] [US1] Unit test verifying ProviderRegistry registration, environment parsing, and default fallback in `tests/unit/test_provider_registry.cpp`
 
 ### Implementation for User Story 1
-- [ ] T007 [P] [US1] Define ProviderRegistry interface and catalog state in `include/tessera/routing/provider_registry.hpp`
-- [ ] T008 [US1] Implement ProviderRegistry, environment variable parser (`TESSERA_PROVIDERS`, `PROVIDER_<NAME>_*`), and catalog lookup in `src/routing/provider_registry.cpp`
-- [ ] T009 [US1] Update HttpUpstreamClient to omit Authorization header when API key is empty (for local models) in `src/backend/upstream_client.cpp`
-- [ ] T010 [US1] Integrate ProviderRegistry loading and provider status banner into server initialization in `src/main.cpp`
+- [x] T007 [P] [US1] Define ProviderRegistry interface and catalog state in `include/tessera/routing/provider_registry.hpp`
+- [x] T008 [US1] Implement ProviderRegistry, environment variable parser (`TESSERA_PROVIDERS`, `PROVIDER_<NAME>_*`), and catalog lookup in `src/routing/provider_registry.cpp`
+- [x] T009 [US1] Update HttpUpstreamClient to omit Authorization header when API key is empty (for local models) in `src/backend/upstream_client.cpp`
+- [x] T010 [US1] Integrate ProviderRegistry loading and provider status banner into server initialization in `src/main.cpp`
 
 **Checkpoint**: User Story 1 complete. Arbitrary providers can be registered and accessed via configuration.
 
@@ -62,12 +62,12 @@
 **Independent Test**: Dispatch requests specifying different model names (`deepseek-chat`, `llama3.2`, `llama-3.1-8b-instant`) and verify each routes to its respective provider.
 
 ### Tests for User Story 2
-- [ ] T011 [P] [US2] Unit test verifying ModelRouter exact match, wildcard prefix matching (`ollama/*`), and default cascade in `tests/unit/test_model_router.cpp`
+- [x] T011 [P] [US2] Unit test verifying ModelRouter exact match, wildcard prefix matching (`ollama/*`), and default cascade in `tests/unit/test_model_router.cpp`
 
 ### Implementation for User Story 2
-- [ ] T012 [P] [US2] Define ModelRouter interface and model routing rule structures in `include/tessera/routing/model_router.hpp`
-- [ ] T013 [US2] Implement model mapping table, provider prefix resolution, and cycle detection in `src/routing/model_router.cpp`
-- [ ] T014 [US2] Integrate ModelRouter resolution (as ICompletionBackend) with ChatCompletionRequest pipeline in `src/server/gateway_server.cpp` and `src/main.cpp`
+- [x] T012 [P] [US2] Define ModelRouter interface and model routing rule structures in `include/tessera/routing/model_router.hpp`
+- [x] T013 [US2] Implement model mapping table, provider prefix resolution, and cycle detection in `src/routing/model_router.cpp`
+- [x] T014 [US2] Integrate ModelRouter resolution (as ICompletionBackend) with ChatCompletionRequest pipeline in `src/server/gateway_server.cpp` and `src/main.cpp`
 
 **Checkpoint**: User Story 2 complete. Client requests dynamically resolve target providers based on model names.
 
@@ -80,13 +80,13 @@
 **Independent Test**: Inject failures on primary and secondary providers in a 3-tier cascade and verify request transparently recovers on the tertiary provider.
 
 ### Tests for User Story 3
-- [ ] T015 [P] [US3] Unit test verifying CascadeRouter multi-tier traversal, circuit state bypass, and exhausted errors in `tests/unit/test_cascade_router.cpp`
-- [ ] T016 [P] [US3] Integration test simulating chaos 429/5xx faults across 3 providers with zero dropped calls and verifying cache preemption bypass in `tests/integration/test_multi_provider_cascade.cpp`
+- [x] T015 [P] [US3] Unit test verifying CascadeRouter multi-tier traversal, circuit state bypass, and exhausted errors in `tests/unit/test_cascade_router.cpp`
+- [x] T016 [P] [US3] Integration test simulating chaos 429/5xx faults across 3 providers with zero dropped calls and verifying cache preemption bypass in `tests/integration/test_multi_provider_cascade.cpp`
 
 ### Implementation for User Story 3
-- [ ] T017 [P] [US3] Define CascadeRouter interface and CascadeTarget specification in `include/tessera/routing/cascade_router.hpp`
-- [ ] T018 [US3] Implement N-tier sequential cascade execution, transparent retry, and model remapping in `src/routing/cascade_router.cpp`
-- [ ] T019 [US3] Refactor FailoverRouter as a backward-compatible 2-tier adapter delegating to CascadeRouter in `include/tessera/routing/failover_router.hpp` and `src/routing/failover_router.cpp`
+- [x] T017 [P] [US3] Define CascadeRouter interface and CascadeTarget specification in `include/tessera/routing/cascade_router.hpp`
+- [x] T018 [US3] Implement N-tier sequential cascade execution, transparent retry, and model remapping in `src/routing/cascade_router.cpp`
+- [x] T019 [US3] Refactor FailoverRouter as a backward-compatible 2-tier adapter delegating to CascadeRouter in `include/tessera/routing/failover_router.hpp` and `src/routing/failover_router.cpp`
 
 **Checkpoint**: User Story 3 complete. Full $N$-tier fallback routing operational with zero loss across outages.
 
@@ -99,11 +99,11 @@
 **Independent Test**: Exhaust quota on Provider A and verify Provider B concurrently processes requests at full throughput without throttling.
 
 ### Tests for User Story 4
-- [ ] T020 [P] [US4] Integration test verifying concurrent quota isolation and independent breaker tripping in `tests/integration/test_provider_rate_isolation.cpp`
+- [x] T020 [P] [US4] Integration test verifying concurrent quota isolation and independent breaker tripping in `tests/integration/test_provider_rate_isolation.cpp`
 
 ### Implementation for User Story 4
-- [ ] T021 [US4] Wire per-provider circuit breaker instantiation and rate limit rule registration in `src/routing/provider_registry.cpp`
-- [ ] T022 [US4] Ensure Redis Lua token bucket rate limiter dynamically registers and isolates keys per provider (`ratelimit:<provider>:<window>`) in `src/ratelimit/rate_limiter.cpp`
+- [x] T021 [US4] Wire per-provider circuit breaker instantiation and rate limit rule registration in `src/routing/provider_registry.cpp`
+- [x] T022 [US4] Ensure Redis Lua token bucket rate limiter dynamically registers and isolates keys per provider (`ratelimit:<provider>:<window>`) in `src/ratelimit/rate_limiter.cpp`
 
 **Checkpoint**: User Story 4 complete. Full fault and quota isolation established across all providers.
 
@@ -116,11 +116,11 @@
 **Independent Test**: Query Prometheus metrics endpoint and verify dynamic metric labels for all registered providers.
 
 ### Tests for User Story 5
-- [ ] T023 [P] [US5] Unit test verifying dynamic multi-provider metrics exposition in `tests/unit/test_telemetry.cpp`
+- [x] T023 [P] [US5] Unit test verifying dynamic multi-provider metrics exposition in `tests/unit/test_telemetry.cpp`
 
 ### Implementation for User Story 5
-- [ ] T024 [US5] Implement dynamic label emission in TelemetryRegistry::ToPrometheusFormat for all active providers in `src/telemetry/telemetry_registry.cpp`
-- [ ] T025 [US5] Update Prometheus exposition format validator script to accept dynamic provider names in `scripts/verify_metrics_format.sh`
+- [x] T024 [US5] Implement dynamic label emission in TelemetryRegistry::ToPrometheusFormat for all active providers in `src/telemetry/telemetry_registry.cpp`
+- [x] T025 [US5] Update Prometheus exposition format validator script to accept dynamic provider names in `scripts/verify_metrics_format.sh`
 
 **Checkpoint**: User Story 5 complete. Real-time telemetry dynamically tags all backends.
 
@@ -130,9 +130,9 @@
 
 **Purpose**: Documentation, configuration examples, and end-to-end verification
 
-- [ ] T026 [P] Update `.env.example` and `README.md` with multi-provider environment configuration syntax in `.env.example` and `README.md`
-- [ ] T027 [P] Update `ROADMAP.md` documenting provider-agnostic cascade capabilities in `ROADMAP.md`
-- [ ] T028 Execute full quickstart validation scenarios under ASan/UBSan per `specs/007-provider-agnostic-routing/quickstart.md`
+- [x] T026 [P] Update `.env.example` and `README.md` with multi-provider environment configuration syntax in `.env.example` and `README.md`
+- [x] T027 [P] Update `ROADMAP.md` documenting provider-agnostic cascade capabilities in `ROADMAP.md`
+- [x] T028 Execute full quickstart validation scenarios under ASan/UBSan per `specs/007-provider-agnostic-routing/quickstart.md`
 
 ---
 

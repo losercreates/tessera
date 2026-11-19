@@ -101,6 +101,28 @@ TEST_F(RateLimiterTest, ProviderResolutionFromModel) {
   EXPECT_EQ(RateLimitedBackend::ResolveProvider("groq/compound"), "groq");
   EXPECT_EQ(RateLimitedBackend::ResolveProvider("google/gemma-2-9b-it"), "openrouter");
   EXPECT_EQ(RateLimitedBackend::ResolveProvider("openrouter/auto"), "openrouter");
+  EXPECT_EQ(RateLimitedBackend::ResolveProvider("deepseek-chat"), "deepseek");
+  EXPECT_EQ(RateLimitedBackend::ResolveProvider("ollama/phi3"), "ollama");
+  EXPECT_EQ(RateLimitedBackend::ResolveProvider("mistral-large"), "mistral");
+  EXPECT_EQ(RateLimitedBackend::ResolveProvider("gpt-4o"), "openai");
   EXPECT_EQ(RateLimitedBackend::ResolveProvider("custom-model", "groq"), "groq");
+}
+
+TEST_F(RateLimiterTest, CustomProviderResolverOverride) {
+  auto mock_backend = std::make_shared<MockEchoBackend>();
+
+  RateLimitedBackend backend(
+      mock_backend, rate_limiter_, "default-prov",
+      [](std::string_view model) -> std::string {
+        if (model == "my-custom-model") return "custom-cluster";
+        return "";
+      });
+
+  ChatCompletionRequest req;
+  req.model = "my-custom-model";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "hello"});
+  ChatCompletionResponse resp;
+  Status st = backend.Complete(req, &resp);
+  EXPECT_TRUE(st.ok());
 }
 

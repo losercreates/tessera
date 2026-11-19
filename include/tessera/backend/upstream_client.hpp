@@ -37,6 +37,7 @@ class IUpstreamClient {
 class HttpUpstreamClient : public IUpstreamClient {
  public:
   explicit HttpUpstreamClient(UpstreamProviderConfig config);
+  explicit HttpUpstreamClient(ProviderConfig config);
   ~HttpUpstreamClient() override = default;
 
   [[nodiscard]] UpstreamResponse Execute(const UpstreamRequest& request) override;

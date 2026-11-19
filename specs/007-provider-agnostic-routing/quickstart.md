@@ -71,7 +71,8 @@ Simulate an outage on primary and secondary providers to verify transparent reco
 Validate that quota saturation on one provider does not throttle or affect another provider.
 
 ```bash
-./build/unit_tests --gtest_filter="ProviderRegistryTest.QuotasAreCompletelyIsolated"
+# Execute integration test for multi-provider rate and fault isolation
+./build/integration_tests --gtest_filter="ProviderRateIsolationIntegrationTest.*"
 ```
 **Expected Outcome**: Provider A reaches capacity and returns rate limit responses; Provider B concurrently processes requests at full throughput.
 

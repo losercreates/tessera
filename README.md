@@ -35,7 +35,43 @@ graph TD
   * **Tier 2 (Semantic Cache)**: Embedded local CPU embedding inference (`all-MiniLM-L6-v2` via ONNX Runtime C++) with RediSearch vector cosine search ($> 0.95$ similarity threshold, $< 20\text{ms}$ p95 latency).
 * **Distributed Rate Limiting**: Atomic Redis Lua-scripted token buckets enforcing provider quotas (Groq: 30 RPM / 1,000 RPD; OpenRouter: 20 RPM / 50 RPD) across all gateway replicas.
 * **Deterministic Circuit Breakers**: 3-state state machine (`CLOSED`, `OPEN`, `HALF-OPEN`) with jittered exponential backoff for seamless failover when upstream quotas or timeouts trip.
+* **Provider-Agnostic Routing & Dynamic Cascades**: Extensible upstream registry supporting arbitrary OpenAI-compatible platforms (cloud and self-hosted Ollama/vLLM) with $N$-tier priority fallback chains and sub-millisecond dynamic model routing.
 * **Memory Safety & Rigorous Testing**: Built with zero raw pointer ownership, verified cleanly with AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan), and tested under 500 concurrent connections.
+
+---
+
+## Provider-Agnostic Routing & Model Cascades
+
+Tessera decodes incoming model identifiers and routes requests through declarative, multi-tier fallback cascades. Upstream providers are **100% provider-agnostic**; platforms like Groq and OpenRouter are purely optional:
+
+```bash
+# Upstream 1: Local Ollama / vLLM Cluster (Primary - no key needed)
+export PROVIDER_1_NAME="ollama"
+export PROVIDER_1_ENDPOINT="http://localhost:11434/v1/chat/completions"
+export PROVIDER_1_MODEL="llama3.2"
+export PROVIDER_1_SUPPORTED_MODELS="llama3.2,phi3"
+export PROVIDER_1_RPM="120"
+
+# Upstream 2: Fast Cloud Platform (Secondary Fallback)
+export PROVIDER_2_NAME="groq"
+export PROVIDER_2_ENDPOINT="https://api.groq.com/openai/v1/chat/completions"
+export PROVIDER_2_KEY="gsk_..."
+export PROVIDER_2_MODEL="llama-3.1-8b-instant"
+export PROVIDER_2_RPM="30"
+
+# Upstream 3: DeepSeek Cloud (Tertiary Fallback)
+export PROVIDER_3_NAME="deepseek"
+export PROVIDER_3_ENDPOINT="https://api.deepseek.com/v1/chat/completions"
+export PROVIDER_3_KEY="sk-..."
+export PROVIDER_3_MODEL="deepseek-chat"
+export PROVIDER_3_RPM="60"
+```
+
+### Routing Rules & Wildcards
+* **Exact Match**: Requesting `"deepseek-chat"` dispatches directly to the DeepSeek client.
+* **Wildcard Prefix**: Requesting `"ollama/mistral"` automatically routes to the local Ollama provider and remaps the model identifier to `"mistral"`.
+* **$N$-Tier Fallback Cascades**: If a primary provider exhausts quota (HTTP 429) or fails with 5xx/timeout, the request transparently fails over down the cascade chain with zero dropped requests.
+* **Isolated Quotas & Breakers**: Each provider maintains dedicated Redis token buckets and an isolated 3-state circuit breaker. An outage or quota exhaustion on one provider never degrades healthy backends.
 
 ---
 

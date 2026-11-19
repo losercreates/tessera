@@ -34,6 +34,14 @@ void TelemetryRegistry::IncrementRequestsTotal(
       counter = std::make_shared<std::atomic<uint64_t>>(0);
       requests_counters_[key] = counter;
     }
+
+    std::string prov(provider);
+    if (circuit_gauges_.find(prov) == circuit_gauges_.end()) {
+      circuit_gauges_[prov] = std::make_shared<std::atomic<uint32_t>>(0);
+    }
+    if (latency_histograms_.find(prov) == latency_histograms_.end()) {
+      latency_histograms_[prov] = std::make_shared<Histogram>();
+    }
   }
   counter->fetch_add(1, std::memory_order_relaxed);
 }
@@ -80,6 +88,17 @@ void TelemetryRegistry::RecordUpstreamLatency(std::string_view provider, double 
   hist->Observe(latency_ms);
 }
 
+void TelemetryRegistry::RegisterProvider(std::string_view provider) {
+  std::string prov(provider);
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (circuit_gauges_.find(prov) == circuit_gauges_.end()) {
+    circuit_gauges_[prov] = std::make_shared<std::atomic<uint32_t>>(0);
+  }
+  if (latency_histograms_.find(prov) == latency_histograms_.end()) {
+    latency_histograms_[prov] = std::make_shared<Histogram>();
+  }
+}
+
 uint64_t TelemetryRegistry::GetRequestsTotal(
     std::string_view model,
     std::string_view provider,
@@ -117,6 +136,16 @@ HistogramSnapshot TelemetryRegistry::GetUpstreamLatencySnapshot(std::string_view
     return it->second->Snapshot();
   }
   return Histogram().Snapshot();
+}
+
+std::vector<std::string> TelemetryRegistry::GetTrackedProviders() const {
+  std::vector<std::string> provs;
+  std::lock_guard<std::mutex> lock(mutex_);
+  provs.reserve(circuit_gauges_.size());
+  for (const auto& [p, _] : circuit_gauges_) {
+    provs.push_back(p);
+  }
+  return provs;
 }
 
 std::string TelemetryRegistry::ToPrometheusFormat() const {
@@ -191,12 +220,14 @@ void TelemetryRegistry::Reset() {
   exact_cache_hits_.store(0, std::memory_order_relaxed);
   semantic_cache_hits_.store(0, std::memory_order_relaxed);
   cache_misses_.store(0, std::memory_order_relaxed);
-  for (auto& [_, gauge] : circuit_gauges_) {
-    gauge->store(0, std::memory_order_relaxed);
-  }
-  for (auto& [_, hist] : latency_histograms_) {
-    hist->Reset();
-  }
+
+  circuit_gauges_.clear();
+  circuit_gauges_["groq"] = std::make_shared<std::atomic<uint32_t>>(0);
+  circuit_gauges_["openrouter"] = std::make_shared<std::atomic<uint32_t>>(0);
+
+  latency_histograms_.clear();
+  latency_histograms_["groq"] = std::make_shared<Histogram>();
+  latency_histograms_["openrouter"] = std::make_shared<Histogram>();
 }
 
 }  // namespace tessera

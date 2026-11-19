@@ -10,7 +10,39 @@ DistributedRateLimiter::DistributedRateLimiter(std::shared_ptr<RedisConnectionPo
 
 void DistributedRateLimiter::AddRule(RateLimitRule rule) {
   std::lock_guard<std::mutex> lock(mutex_);
-  rules_by_provider_[rule.provider].push_back(std::move(rule));
+  auto& list = rules_by_provider_[rule.provider];
+  for (auto& existing : list) {
+    if (existing.window_name == rule.window_name) {
+      existing = std::move(rule);
+      return;
+    }
+  }
+  list.push_back(std::move(rule));
+}
+
+void DistributedRateLimiter::ClearRules(const std::string& provider) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rules_by_provider_.erase(provider);
+}
+
+void DistributedRateLimiter::ClearAllRules() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rules_by_provider_.clear();
+}
+
+std::vector<RateLimitRule> DistributedRateLimiter::GetRules(const std::string& provider) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = rules_by_provider_.find(provider);
+  if (it != rules_by_provider_.end()) {
+    return it->second;
+  }
+  return {};
+}
+
+bool DistributedRateLimiter::HasRules(const std::string& provider) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = rules_by_provider_.find(provider);
+  return it != rules_by_provider_.end() && !it->second.empty();
 }
 
 void DistributedRateLimiter::LoadStandardPolicies() {

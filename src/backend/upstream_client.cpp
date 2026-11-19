@@ -41,6 +41,13 @@ static std::string DecodeChunkedBody(std::string_view chunked_data) {
 HttpUpstreamClient::HttpUpstreamClient(UpstreamProviderConfig config)
     : config_(std::move(config)) {}
 
+HttpUpstreamClient::HttpUpstreamClient(ProviderConfig config)
+    : config_{.name = std::move(config.name),
+              .default_model = std::move(config.default_model),
+              .endpoint = std::move(config.endpoint),
+              .api_key = std::move(config.api_key),
+              .circuit_config = config.circuit_config} {}
+
 std::string_view HttpUpstreamClient::ProviderName() const noexcept {
   return config_.name;
 }
@@ -193,8 +200,13 @@ UpstreamResponse HttpUpstreamClient::Execute(const UpstreamRequest& request) {
   auto start_time = std::chrono::high_resolution_clock::now();
   std::string model_name = request.model.empty() ? config_.default_model : request.model;
 
-  // If no API key configured, use simulated offline synthesis for CI and local zero-cost testing
-  if (config_.api_key.empty()) {
+  // If no API key configured for cloud providers (or mock/offline), use simulated offline synthesis for CI/offline testing
+  bool is_cloud_without_key = config_.api_key.empty() &&
+      (config_.endpoint.find("api.groq.com") != std::string::npos ||
+       config_.endpoint.find("openrouter.ai") != std::string::npos ||
+       config_.endpoint == "offline" || config_.endpoint == "mock");
+
+  if (is_cloud_without_key) {
     std::string req_json = SerializeOpenAIRequest(request);
     TESSERA_LOG_DEBUG("Synthesizing offline mock response for {} ({})", config_.name, model_name);
 
@@ -211,13 +223,16 @@ UpstreamResponse HttpUpstreamClient::Execute(const UpstreamRequest& request) {
     return ParseOpenAIResponse(200, synthesized_body, latency);
   }
 
-  // Live upstream HTTPS request via OpenSSL TLS
+  // Live upstream HTTP / HTTPS request
   std::string url = config_.endpoint;
   std::string host;
   uint16_t port = 443;
   std::string path = "/";
+  bool is_https = true;
 
   if (url.rfind("https://", 0) == 0) {
+    is_https = true;
+    port = 443;
     size_t slash = url.find('/', 8);
     if (slash != std::string::npos) {
       host = url.substr(8, slash - 8);
@@ -226,6 +241,7 @@ UpstreamResponse HttpUpstreamClient::Execute(const UpstreamRequest& request) {
       host = url.substr(8);
     }
   } else if (url.rfind("http://", 0) == 0) {
+    is_https = false;
     port = 80;
     size_t slash = url.find('/', 7);
     if (slash != std::string::npos) {
@@ -272,21 +288,6 @@ UpstreamResponse HttpUpstreamClient::Execute(const UpstreamRequest& request) {
   }
   freeaddrinfo(res);
 
-  const SSL_METHOD* method = TLS_client_method();
-  SSL_CTX* ctx = SSL_CTX_new(method);
-  SSL_CTX_set_default_verify_paths(ctx);
-  SSL* ssl = SSL_new(ctx);
-  SSL_set_fd(ssl, fd);
-  SSL_set_tlsext_host_name(ssl, host.c_str());
-
-  if (SSL_connect(ssl) <= 0) {
-    TESSERA_LOG_ERROR("TLS handshake failed with upstream {}", host);
-    SSL_free(ssl);
-    close(fd);
-    SSL_CTX_free(ctx);
-    return ParseOpenAIResponse(502, "{\"error\":{\"message\":\"TLS handshake failed\"}}", 0.0);
-  }
-
   std::string req_json = SerializeOpenAIRequest(request);
   std::ostringstream req;
   req << "POST " << path << " HTTP/1.1\r\n";
@@ -294,25 +295,59 @@ UpstreamResponse HttpUpstreamClient::Execute(const UpstreamRequest& request) {
   req << "User-Agent: TesseraGateway/0.1\r\n";
   req << "Accept: application/json\r\n";
   req << "Content-Type: application/json\r\n";
-  req << "Authorization: Bearer " << config_.api_key << "\r\n";
+  if (!config_.api_key.empty()) {
+    req << "Authorization: Bearer " << config_.api_key << "\r\n";
+  }
   req << "Content-Length: " << req_json.size() << "\r\n";
   req << "Connection: close\r\n\r\n";
   req << req_json;
 
   std::string req_str = req.str();
-  SSL_write(ssl, req_str.data(), static_cast<int>(req_str.size()));
-
   std::string raw_response;
   char buf[4096];
-  int bytes = 0;
-  while ((bytes = SSL_read(ssl, buf, sizeof(buf))) > 0) {
-    raw_response.append(buf, static_cast<size_t>(bytes));
-  }
 
-  SSL_shutdown(ssl);
-  SSL_free(ssl);
-  close(fd);
-  SSL_CTX_free(ctx);
+  if (is_https) {
+    const SSL_METHOD* method = TLS_client_method();
+    SSL_CTX* ctx = SSL_CTX_new(method);
+    SSL_CTX_set_default_verify_paths(ctx);
+    SSL* ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, fd);
+    SSL_set_tlsext_host_name(ssl, host.c_str());
+
+    if (SSL_connect(ssl) <= 0) {
+      TESSERA_LOG_ERROR("TLS handshake failed with upstream {}", host);
+      SSL_free(ssl);
+      close(fd);
+      SSL_CTX_free(ctx);
+      return ParseOpenAIResponse(502, "{\"error\":{\"message\":\"TLS handshake failed\"}}", 0.0);
+    }
+
+    SSL_write(ssl, req_str.data(), static_cast<int>(req_str.size()));
+
+    int bytes = 0;
+    while ((bytes = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+      raw_response.append(buf, static_cast<size_t>(bytes));
+    }
+
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    close(fd);
+    SSL_CTX_free(ctx);
+  } else {
+    // Plain HTTP socket
+    ssize_t total_sent = 0;
+    while (total_sent < static_cast<ssize_t>(req_str.size())) {
+      ssize_t sent = write(fd, req_str.data() + total_sent, req_str.size() - static_cast<size_t>(total_sent));
+      if (sent <= 0) break;
+      total_sent += sent;
+    }
+
+    ssize_t bytes = 0;
+    while ((bytes = read(fd, buf, sizeof(buf))) > 0) {
+      raw_response.append(buf, static_cast<size_t>(bytes));
+    }
+    close(fd);
+  }
 
   auto header_end = raw_response.find("\r\n\r\n");
   std::string headers;

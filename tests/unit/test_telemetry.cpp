@@ -102,5 +102,63 @@ TEST_F(TelemetryTest, PrometheusTextFormatSerialization) {
   EXPECT_NE(output.find("# TYPE upstream_latency_ms histogram"), std::string::npos);
 }
 
+TEST_F(TelemetryTest, DynamicMultiProviderRegistrationAndExposition) {
+  auto& registry = TelemetryRegistry::Instance();
+
+  // Dynamically register 3 new providers
+  registry.RegisterProvider("ollama");
+  registry.RegisterProvider("deepseek");
+  registry.RegisterProvider("mistral");
+
+  auto tracked = registry.GetTrackedProviders();
+  EXPECT_GE(tracked.size(), 5u); // groq, openrouter, ollama, deepseek, mistral
+
+  // Record operational telemetry across the dynamic backends
+  registry.IncrementRequestsTotal("llama3.2", "ollama", "200");
+  registry.IncrementRequestsTotal("llama3.2", "ollama", "200");
+  registry.IncrementRequestsTotal("deepseek-chat", "deepseek", "503");
+  registry.IncrementRequestsTotal("mistral-large", "mistral", "200");
+
+  registry.SetCircuitBreakerState("ollama", CircuitState::CLOSED);
+  registry.SetCircuitBreakerState("deepseek", CircuitState::OPEN);
+  registry.SetCircuitBreakerState("mistral", CircuitState::HALF_OPEN);
+
+  registry.RecordUpstreamLatency("ollama", 18.2);
+  registry.RecordUpstreamLatency("deepseek", 420.5);
+  registry.RecordUpstreamLatency("mistral", 95.0);
+
+  // Validate inspection hooks
+  EXPECT_EQ(registry.GetRequestsTotal("llama3.2", "ollama", "200"), 2u);
+  EXPECT_EQ(registry.GetRequestsTotal("deepseek-chat", "deepseek", "503"), 1u);
+  EXPECT_EQ(registry.GetRequestsTotal("mistral-large", "mistral", "200"), 1u);
+
+  EXPECT_EQ(registry.GetCircuitBreakerState("ollama"), 0u);
+  EXPECT_EQ(registry.GetCircuitBreakerState("deepseek"), 1u);
+  EXPECT_EQ(registry.GetCircuitBreakerState("mistral"), 2u);
+
+  auto ollama_lat = registry.GetUpstreamLatencySnapshot("ollama");
+  EXPECT_EQ(ollama_lat.total_count, 1u);
+  EXPECT_NEAR(ollama_lat.sum, 18.2, 0.1);
+
+  // Validate Prometheus exposition text
+  std::string prom = registry.ToPrometheusFormat();
+
+  // Counters
+  EXPECT_NE(prom.find("gateway_requests_total{model=\"llama3.2\",provider=\"ollama\",status=\"200\"} 2"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_requests_total{model=\"deepseek-chat\",provider=\"deepseek\",status=\"503\"} 1"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_requests_total{model=\"mistral-large\",provider=\"mistral\",status=\"200\"} 1"), std::string::npos);
+
+  // Gauges
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"ollama\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"deepseek\"} 1"), std::string::npos);
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"mistral\"} 2"), std::string::npos);
+
+  // Histograms
+  EXPECT_NE(prom.find("upstream_latency_ms_count{provider=\"ollama\"} 1"), std::string::npos);
+  EXPECT_NE(prom.find("upstream_latency_ms_count{provider=\"deepseek\"} 1"), std::string::npos);
+  EXPECT_NE(prom.find("upstream_latency_ms_count{provider=\"mistral\"} 1"), std::string::npos);
+  EXPECT_NE(prom.find("upstream_latency_ms_sum{provider=\"ollama\"}"), std::string::npos);
+}
+
 }  // namespace tessera
 

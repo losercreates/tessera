@@ -1,8 +1,5 @@
 #include "tessera/routing/failover_router.hpp"
-#include "tessera/telemetry/telemetry_registry.hpp"
 #include "tessera/common/logger.hpp"
-#include <chrono>
-#include <utility>
 
 namespace tessera {
 
@@ -16,7 +13,13 @@ FailoverRouter::FailoverRouter(
       primary_breaker_(std::move(primary_breaker)),
       fallback_client_(std::move(fallback_client)),
       fallback_breaker_(std::move(fallback_breaker)),
-      fallback_model_(std::move(fallback_model)) {}
+      fallback_model_(std::move(fallback_model)) {
+  std::vector<CascadeTarget> targets = {
+      CascadeTarget{.client = primary_client_, .breaker = primary_breaker_, .target_model = "", .priority = 0},
+      CascadeTarget{.client = fallback_client_, .breaker = fallback_breaker_, .target_model = fallback_model_, .priority = 1},
+  };
+  cascade_router_ = std::make_unique<CascadeRouter>(std::move(targets), "failover_adapter");
+}
 
 Status FailoverRouter::Complete(
     const ChatCompletionRequest& request,
@@ -27,124 +30,38 @@ Status FailoverRouter::Complete(
 
   total_requests_.fetch_add(1, std::memory_order_relaxed);
 
-  // 1. Evaluate primary circuit breaker
-  if (primary_breaker_->CanAttempt()) {
-    primary_attempts_.fetch_add(1, std::memory_order_relaxed);
+  auto stats_before = cascade_router_->GetStats();
+  Status status = cascade_router_->Complete(request, response);
+  auto stats_after = cascade_router_->GetStats();
 
-    std::string model = request.model.empty()
-                            ? std::string(primary_client_->DefaultModel())
-                            : request.model;
-    UpstreamRequest primary_req = BuildUpstreamRequest(request, primary_client_->ProviderName(), model);
+  uint64_t new_bypasses = stats_after.direct_bypasses - stats_before.direct_bypasses;
+  uint64_t new_failovers = stats_after.failover_attempts - stats_before.failover_attempts;
 
-    UpstreamResponse primary_resp = primary_client_->Execute(primary_req);
-    TelemetryRegistry::Instance().RecordUpstreamLatency(primary_client_->ProviderName(), primary_resp.latency_ms);
-
-    if (primary_resp.IsSuccess()) {
-      primary_successes_.fetch_add(1, std::memory_order_relaxed);
-      primary_breaker_->RecordSuccess();
-      TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
-      TelemetryRegistry::Instance().IncrementRequestsTotal(primary_resp.model, primary_client_->ProviderName(), "200");
-      PopulateResponse(primary_resp, request, response);
-      return Status::OK();
+  if (new_bypasses > 0) {
+    direct_fallback_routes_.fetch_add(new_bypasses, std::memory_order_relaxed);
+    if (status.ok()) {
+      fallback_successes_.fetch_add(1, std::memory_order_relaxed);
     }
-
-    // Primary failed (429, 5xx, timeout, etc.)
-    primary_failures_.fetch_add(1, std::memory_order_relaxed);
-    primary_breaker_->RecordFailure(primary_resp.status_code, primary_resp.error_message);
-    TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
-    TelemetryRegistry::Instance().IncrementRequestsTotal(model, primary_client_->ProviderName(), std::to_string(primary_resp.status_code));
-
-    TESSERA_LOG_WARN(
-        "Primary upstream ({}) failed with status {}: {}. Triggering transparent failover to fallback ({}) for correlation {}",
-        primary_client_->ProviderName(), primary_resp.status_code, primary_resp.error_message,
-        fallback_model_, request.correlation_id);
-    failover_attempts_.fetch_add(1, std::memory_order_relaxed);
   } else {
-    // Primary is OPEN or in HALF-OPEN concurrent probation
-    direct_fallback_routes_.fetch_add(1, std::memory_order_relaxed);
-    TelemetryRegistry::Instance().SetCircuitBreakerState(primary_client_->ProviderName(), primary_breaker_->GetState());
-    TESSERA_LOG_INFO(
-        "Primary circuit is non-serving (state={}). Directly routing request to fallback ({}) for correlation {}",
-        ToString(primary_breaker_->GetState()), fallback_model_, request.correlation_id);
+    primary_attempts_.fetch_add(1, std::memory_order_relaxed);
+    if (new_failovers > 0) {
+      failover_attempts_.fetch_add(new_failovers, std::memory_order_relaxed);
+      primary_failures_.fetch_add(1, std::memory_order_relaxed);
+      if (status.ok()) {
+        fallback_successes_.fetch_add(1, std::memory_order_relaxed);
+      }
+    } else if (status.ok()) {
+      primary_successes_.fetch_add(1, std::memory_order_relaxed);
+    }
   }
 
-  // 2. Fallback routing to secondary provider (OpenRouter)
-  if (!fallback_breaker_->CanAttempt()) {
+  if (!status.ok()) {
+    fallback_failures_.fetch_add(1, std::memory_order_relaxed);
     all_providers_failed_.fetch_add(1, std::memory_order_relaxed);
-    TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
-    TESSERA_LOG_ERROR(
-        "All upstream providers unavailable (Primary and Fallback circuit breakers OPEN) for correlation {}",
-        request.correlation_id);
     return Status::Unavailable("All upstream providers are exhausted or unavailable");
   }
 
-  // Remap model name to fallback model while preserving prompt payload
-  UpstreamRequest fallback_req = BuildUpstreamRequest(request, fallback_client_->ProviderName(), fallback_model_);
-  UpstreamResponse fallback_resp = fallback_client_->Execute(fallback_req);
-  TelemetryRegistry::Instance().RecordUpstreamLatency(fallback_client_->ProviderName(), fallback_resp.latency_ms);
-
-  if (fallback_resp.IsSuccess()) {
-    fallback_successes_.fetch_add(1, std::memory_order_relaxed);
-    fallback_breaker_->RecordSuccess();
-    TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
-    TelemetryRegistry::Instance().IncrementRequestsTotal(fallback_resp.model, fallback_client_->ProviderName(), "200");
-    PopulateResponse(fallback_resp, request, response);
-    return Status::OK();
-  }
-
-  fallback_failures_.fetch_add(1, std::memory_order_relaxed);
-  fallback_breaker_->RecordFailure(fallback_resp.status_code, fallback_resp.error_message);
-  TelemetryRegistry::Instance().SetCircuitBreakerState(fallback_client_->ProviderName(), fallback_breaker_->GetState());
-  TelemetryRegistry::Instance().IncrementRequestsTotal(fallback_model_, fallback_client_->ProviderName(), std::to_string(fallback_resp.status_code));
-  all_providers_failed_.fetch_add(1, std::memory_order_relaxed);
-
-  TESSERA_LOG_ERROR(
-      "Both primary and fallback providers failed. Fallback ({}) returned status {}: {} for correlation {}",
-      fallback_client_->ProviderName(), fallback_resp.status_code, fallback_resp.error_message,
-      request.correlation_id);
-
-  return Status::Unavailable("All upstream providers failed to complete request: " + fallback_resp.error_message);
-}
-
-UpstreamRequest FailoverRouter::BuildUpstreamRequest(
-    const ChatCompletionRequest& req,
-    std::string_view provider,
-    std::string_view model) const {
-  UpstreamRequest out;
-  out.provider = std::string(provider);
-  out.model = std::string(model);
-  out.messages = req.messages;
-  out.temperature = req.temperature.value_or(0.7f);
-  out.max_tokens = req.max_tokens.value_or(1024);
-  out.correlation_id = req.correlation_id;
-  return out;
-}
-
-void FailoverRouter::PopulateResponse(
-    const UpstreamResponse& upstream_resp,
-    const ChatCompletionRequest& orig_req,
-    ChatCompletionResponse* response) const {
-  response->id = "cmpl-" + orig_req.correlation_id;
-  response->created = std::chrono::duration_cast<std::chrono::seconds>(
-                          std::chrono::system_clock::now().time_since_epoch())
-                          .count();
-  response->model = upstream_resp.model;
-  response->correlation_id = orig_req.correlation_id;
-
-  Choice choice;
-  choice.index = 0;
-  choice.message.role = "assistant";
-  choice.message.content = upstream_resp.completion_text;
-  choice.finish_reason = "stop";
-
-  response->choices.clear();
-  response->choices.push_back(std::move(choice));
-
-  response->usage.prompt_tokens = upstream_resp.prompt_tokens;
-  response->usage.completion_tokens = upstream_resp.completion_tokens;
-  response->usage.total_tokens = upstream_resp.total_tokens;
-  response->cache_hit = false;
-  response->cache_tier = "";
+  return Status::OK();
 }
 
 FailoverRouterStats FailoverRouter::GetStats() const noexcept {

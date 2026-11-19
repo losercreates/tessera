@@ -74,6 +74,32 @@ check_pattern "upstream_latency_ms_bucket\{provider=\".*\",le=\".*\"\}" "upstrea
 check_pattern "upstream_latency_ms_sum\{provider=\".*\"\}" "upstream_latency_ms histogram sum sample"
 check_pattern "upstream_latency_ms_count\{provider=\".*\"\}" "upstream_latency_ms histogram count sample"
 
+# 5. Dynamic per-provider verification
+PROVIDERS_TO_VERIFY="${2:-${TESSERA_PROVIDERS:-}}"
+
+if [ -n "$PROVIDERS_TO_VERIFY" ]; then
+    echo "--- Verifying explicit providers: $PROVIDERS_TO_VERIFY ---"
+    IFS=',' read -ra PROV_ARRAY <<< "$PROVIDERS_TO_VERIFY"
+    for prov in "${PROV_ARRAY[@]}"; do
+        prov=$(echo "$prov" | tr -d '[:space:]')
+        if [ -n "$prov" ]; then
+            check_pattern "circuit_breaker_state\{provider=\"$prov\"\} [0-2]" "circuit_breaker_state for provider '$prov'"
+            check_pattern "upstream_latency_ms_count\{provider=\"$prov\"\}" "upstream_latency_ms_count for provider '$prov'"
+            check_pattern "upstream_latency_ms_bucket\{provider=\"$prov\",le=\".*\"\}" "upstream_latency_ms_bucket for provider '$prov'"
+        fi
+    done
+fi
+
+# Also discover and validate any dynamic providers present in the metrics payload
+DISCOVERED_PROVIDERS=$(grep -oE 'circuit_breaker_state\{provider="[^"]+"\}' "$METRICS_FILE" | sed -E 's/.*provider="([^"]+)".*/\1/' | sort -u || true)
+if [ -n "$DISCOVERED_PROVIDERS" ]; then
+    echo "--- Validating auto-discovered providers from payload ---"
+    for prov in $DISCOVERED_PROVIDERS; do
+        check_pattern "circuit_breaker_state\{provider=\"$prov\"\} [0-2]" "valid gauge state for '$prov'"
+        check_pattern "upstream_latency_ms_count\{provider=\"$prov\"\}" "valid latency count for '$prov'"
+    done
+fi
+
 echo "-----------------------------------------------------------------"
 
 if [ "$FAILED" -eq 0 ]; then

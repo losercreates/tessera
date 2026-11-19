@@ -1,14 +1,21 @@
 #pragma once
 
 #include "tessera/common/types.hpp"
+#include "tessera/ratelimit/token_bucket.hpp"
 #include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include <memory>
+#include <cctype>
+#include <algorithm>
 
 namespace tessera {
+
+class IUpstreamClient;
+class ICircuitBreaker;
 
 enum class CircuitState : uint8_t {
   CLOSED = 0,     // Normal healthy state. Requests pass through.
@@ -88,6 +95,80 @@ struct UpstreamProviderConfig {
   std::string endpoint = "https://api.groq.com/openai/v1/chat/completions";
   std::string api_key;
   CircuitBreakerConfig circuit_config;
+};
+
+struct ProviderConfig {
+  std::string name;
+  std::string endpoint;
+  std::string api_key;
+  std::string default_model;
+  std::vector<std::string> supported_models;
+  CircuitBreakerConfig circuit_config;
+  std::vector<RateLimitRule> rate_limits;
+
+  ProviderConfig() = default;
+
+  ProviderConfig(const UpstreamProviderConfig& upc)
+      : name(upc.name),
+        endpoint(upc.endpoint),
+        api_key(upc.api_key),
+        default_model(upc.default_model),
+        circuit_config(upc.circuit_config) {}
+
+  [[nodiscard]] bool IsLocal() const noexcept {
+    if (api_key.empty()) {
+      return true;
+    }
+    return endpoint.find("localhost") != std::string::npos ||
+           endpoint.find("127.0.0.1") != std::string::npos ||
+           endpoint.find("0.0.0.0") != std::string::npos;
+  }
+
+  [[nodiscard]] bool Validate(std::string* error_msg = nullptr) const {
+    if (name.empty()) {
+      if (error_msg) *error_msg = "Provider name cannot be empty";
+      return false;
+    }
+    for (char c : name) {
+      if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+        if (error_msg) *error_msg = "Provider name must be alphanumeric with '_' or '-'";
+        return false;
+      }
+    }
+    if (endpoint.empty()) {
+      if (error_msg) *error_msg = "Provider endpoint cannot be empty";
+      return false;
+    }
+    if (endpoint.rfind("http://", 0) != 0 && endpoint.rfind("https://", 0) != 0) {
+      if (error_msg) *error_msg = "Provider endpoint must start with http:// or https://";
+      return false;
+    }
+    if (default_model.empty()) {
+      if (error_msg) *error_msg = "Provider default_model cannot be empty";
+      return false;
+    }
+    return true;
+  }
+};
+
+struct CascadeTarget {
+  std::shared_ptr<IUpstreamClient> client;
+  std::shared_ptr<ICircuitBreaker> breaker;
+  std::string target_model;
+  uint32_t priority = 0;
+};
+
+struct CascadeRoute {
+  std::string route_id;
+  std::string description;
+  std::vector<CascadeTarget> targets;
+
+  [[nodiscard]] size_t TargetCount() const noexcept {
+    return targets.size();
+  }
+  [[nodiscard]] bool Empty() const noexcept {
+    return targets.empty();
+  }
 };
 
 struct FailoverRouterConfig {

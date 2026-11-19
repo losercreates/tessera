@@ -4,6 +4,8 @@
 #include "tessera/backend/mock_upstream_client.hpp"
 #include "tessera/routing/circuit_breaker.hpp"
 #include "tessera/routing/failover_router.hpp"
+#include "tessera/routing/provider_registry.hpp"
+#include "tessera/routing/model_router.hpp"
 #include "tessera/cache/cached_backend.hpp"
 #include "tessera/cache/exact_cache.hpp"
 #include "tessera/cache/semantic_cache.hpp"
@@ -98,52 +100,30 @@ int main(int argc, char** argv) {
   // Resilient Upstream Routing & Circuit Breakers:
   // Primary: Groq (Llama 3.3 70B)
   // Fallback: OpenRouter (Gemma-2-9B)
-  tessera::CircuitBreakerConfig groq_breaker_cfg;
-  groq_breaker_cfg.consecutive_failure_threshold = 3;
-  groq_breaker_cfg.base_cooldown_ms = 1000;
-  groq_breaker_cfg.max_cooldown_ms = 60000;
-  groq_breaker_cfg.trip_on_429 = true;
+  // Resilient Multi-Provider Routing & Registry:
+  auto provider_registry = tessera::ProviderRegistry::LoadFromEnvironment(true);
 
-  tessera::CircuitBreakerConfig openrouter_breaker_cfg;
-  openrouter_breaker_cfg.consecutive_failure_threshold = 3;
-  openrouter_breaker_cfg.base_cooldown_ms = 1000;
-  openrouter_breaker_cfg.max_cooldown_ms = 60000;
-  openrouter_breaker_cfg.trip_on_429 = true;
-
-  auto groq_breaker = std::make_shared<tessera::CircuitBreaker>(groq_breaker_cfg);
-  auto openrouter_breaker = std::make_shared<tessera::CircuitBreaker>(openrouter_breaker_cfg);
-
-  std::string groq_key;
-  std::string openrouter_key;
-  if (const char* k = std::getenv("GROQ_API_KEY")) groq_key = k;
-  if (const char* k = std::getenv("OPENROUTER_API_KEY")) openrouter_key = k;
-
-  std::string groq_model = "llama-3.1-8b-instant";
-  std::string openrouter_model = "openrouter/free";
-  if (const char* m = std::getenv("GROQ_MODEL")) groq_model = m;
-  if (const char* fm = std::getenv("OPENROUTER_MODEL")) openrouter_model = fm;
-
-  tessera::UpstreamProviderConfig groq_cfg;
-  groq_cfg.name = "groq";
-  groq_cfg.default_model = groq_model;
-  groq_cfg.endpoint = "https://api.groq.com/openai/v1/chat/completions";
-  groq_cfg.api_key = groq_key;
-  auto groq_client = std::make_shared<tessera::HttpUpstreamClient>(groq_cfg);
-
-  tessera::UpstreamProviderConfig openrouter_cfg;
-  openrouter_cfg.name = "openrouter";
-  openrouter_cfg.default_model = openrouter_model;
-  openrouter_cfg.endpoint = "https://openrouter.ai/api/v1/chat/completions";
-  openrouter_cfg.api_key = openrouter_key;
-  auto openrouter_client = std::make_shared<tessera::HttpUpstreamClient>(openrouter_cfg);
-
-  auto failover_router = std::make_shared<tessera::FailoverRouter>(
-      groq_client, groq_breaker, openrouter_client, openrouter_breaker, openrouter_model);
-
-  // Pipeline: FailoverRouter -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(failover_router, two_tier_cache);
+  // Rate Limiting Engine:
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
-  auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, "groq");
+  provider_registry.RegisterRateLimits(*rate_limiter);
+
+  // Dynamic Model Router & Cascading Fallback Engine:
+  auto model_router = tessera::ModelRouter::CreateFromRegistry(provider_registry);
+
+  // Pipeline: ModelRouter (Cascade) -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
+  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(model_router, two_tier_cache);
+  auto providers = provider_registry.GetRegisteredProviders();
+  std::string default_prov = providers.empty() ? "default" : providers.front();
+  auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, default_prov);
+
+  pipeline->SetProviderResolver([model_router](std::string_view model) -> std::string {
+    std::string remapped;
+    auto cascade = model_router->ResolveCascade(model, &remapped);
+    if (cascade && !cascade->Targets().empty()) {
+      return std::string(cascade->Targets()[0].client->ProviderName());
+    }
+    return "";
+  });
 
   tessera::GatewayServer server(config, pipeline);
   tessera::GatewayServer::RegisterSignalHandler(&server);
@@ -161,9 +141,16 @@ int main(int argc, char** argv) {
   std::cout << " Redis:      " << redis_host << ":" << redis_port << "\n";
   std::cout << " Cache TTL:  " << cache_ttl << "s                      \n";
   std::cout << " Min Sim:    " << similarity_threshold << "            \n";
-  std::cout << " Upstream:   " << (groq_key.empty() ? "Groq (offline mock)" : "Groq [LIVE HTTPS]")
-            << " -> " << (openrouter_key.empty() ? "OpenRouter (offline mock)" : "OpenRouter [LIVE HTTPS]") << "\n";
-  std::cout << " Pipeline:   RateLimit -> TwoTierCache -> FailoverRouter\n";
+
+  std::cout << " Upstream Providers: [";
+  const auto registered = provider_registry.GetRegisteredProviders();
+  for (size_t i = 0; i < registered.size(); ++i) {
+    std::cout << registered[i];
+    if (i + 1 < registered.size()) std::cout << ", ";
+  }
+  std::cout << "]\n";
+
+  std::cout << " Pipeline:   RateLimit -> TwoTierCache -> ModelRouter (Dynamic Cascade)\n";
   std::cout << "=======================================================\n\n";
 
   server.Wait();

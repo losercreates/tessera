@@ -3,6 +3,7 @@
 #include "tessera/backend/completion_backend.hpp"
 #include "tessera/backend/upstream_client.hpp"
 #include "tessera/routing/circuit_breaker.hpp"
+#include "tessera/routing/cascade_router.hpp"
 #include <atomic>
 #include <memory>
 #include <string>
@@ -37,21 +38,12 @@ class FailoverRouter : public ICompletionBackend {
   [[nodiscard]] FailoverRouterStats GetStats() const noexcept;
 
  private:
-  UpstreamRequest BuildUpstreamRequest(
-      const ChatCompletionRequest& req,
-      std::string_view provider,
-      std::string_view model) const;
-
-  void PopulateResponse(
-      const UpstreamResponse& upstream_resp,
-      const ChatCompletionRequest& orig_req,
-      ChatCompletionResponse* response) const;
-
   std::shared_ptr<IUpstreamClient> primary_client_;
   std::shared_ptr<ICircuitBreaker> primary_breaker_;
   std::shared_ptr<IUpstreamClient> fallback_client_;
   std::shared_ptr<ICircuitBreaker> fallback_breaker_;
   std::string fallback_model_;
+  std::unique_ptr<CascadeRouter> cascade_router_;
 
   // Atomic statistics
   mutable std::atomic<uint64_t> total_requests_{0};

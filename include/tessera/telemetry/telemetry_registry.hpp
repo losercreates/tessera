@@ -27,6 +27,9 @@ class TelemetryRegistry {
 
   void RecordUpstreamLatency(std::string_view provider, double latency_ms);
 
+  // Dynamically registers an upstream provider for gauge and histogram tracking
+  void RegisterProvider(std::string_view provider);
+
   // Serializes all captured metrics into standard Prometheus text format
   [[nodiscard]] std::string ToPrometheusFormat() const;
 
@@ -35,6 +38,7 @@ class TelemetryRegistry {
   [[nodiscard]] uint64_t GetCacheHitsTotal(std::string_view tier) const;
   [[nodiscard]] uint32_t GetCircuitBreakerState(std::string_view provider) const;
   [[nodiscard]] HistogramSnapshot GetUpstreamLatencySnapshot(std::string_view provider) const;
+  [[nodiscard]] std::vector<std::string> GetTrackedProviders() const;
 
   // Resets all metrics (for hermetic unit testing)
   void Reset();
