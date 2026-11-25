@@ -160,5 +160,34 @@ TEST_F(TelemetryTest, DynamicMultiProviderRegistrationAndExposition) {
   EXPECT_NE(prom.find("upstream_latency_ms_sum{provider=\"ollama\"}"), std::string::npos);
 }
 
+TEST_F(TelemetryTest, RateLimitSkipsCounterIsolatedFromLatencyAndReset) {
+  auto& registry = TelemetryRegistry::Instance();
+
+  registry.RegisterProvider("primary_p");
+  registry.RegisterProvider("fallback_p");
+
+  // Pre-seeded to 0 upon registration
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("primary_p"), 0u);
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("fallback_p"), 0u);
+
+  registry.IncrementRateLimitSkipsTotal("primary_p");
+  registry.IncrementRateLimitSkipsTotal("primary_p");
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("primary_p"), 2u);
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("fallback_p"), 0u);
+
+  // Skipped provider MUST NOT gain synthetic upstream latency samples
+  EXPECT_EQ(registry.GetUpstreamLatencySnapshot("primary_p").total_count, 0u);
+
+  std::string prom = registry.ToPrometheusFormat();
+  EXPECT_NE(prom.find("# HELP gateway_ratelimit_skips_total"), std::string::npos);
+  EXPECT_NE(prom.find("# TYPE gateway_ratelimit_skips_total counter"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_ratelimit_skips_total{provider=\"primary_p\"} 2"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_ratelimit_skips_total{provider=\"fallback_p\"} 0"), std::string::npos);
+
+  // Reset must clear dynamic rate limit skip counters cleanly
+  registry.Reset();
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("primary_p"), 0u);
+}
+
 }  // namespace tessera
 

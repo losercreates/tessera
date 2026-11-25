@@ -37,6 +37,12 @@ class ICircuitBreaker {
   virtual void RecordFailure(int status_code, std::string_view error_message = "") = 0;
 
   /**
+   * Releases a HALF-OPEN trial probe reservation when local admission denies
+   * dispatch prior to network execution. Strict no-op in CLOSED or OPEN states.
+   */
+  virtual void CancelProbe() noexcept {}
+
+  /**
    * Returns current active circuit state (CLOSED, OPEN, HALF-OPEN).
    */
   [[nodiscard]] virtual CircuitState GetState() const noexcept = 0;
@@ -65,6 +71,7 @@ class CircuitBreaker : public ICircuitBreaker {
   bool CanAttempt() override;
   void RecordSuccess() override;
   void RecordFailure(int status_code, std::string_view error_message = "") override;
+  void CancelProbe() noexcept override;
 
   [[nodiscard]] CircuitState GetState() const noexcept override;
   [[nodiscard]] CircuitBreakerStats GetStats() const noexcept override;

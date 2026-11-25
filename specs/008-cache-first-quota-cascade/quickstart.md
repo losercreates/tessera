@@ -2,7 +2,7 @@
 
 **Feature**: `008-cache-first-quota-cascade`  
 **Date**: 2026-11-25  
-**Status**: Planned Validation Scenarios
+**Status**: Verified
 
 ---
 
@@ -27,7 +27,7 @@ cmake --build build --parallel $(nproc)
 Verifies that exact-match and semantic-match cache hits bypass upstream rate-limit token deduction and still succeed even when the primary provider's bucket has 0 tokens left.
 
 ```bash
-./build/unit_tests --gtest_filter="CacheFirstQuotaCascadeTest.*"
+./build/unit_tests --gtest_filter="CacheFirstCascadeTest.*"
 ./build/integration_tests --gtest_filter="MultiProviderCascadeIntegrationTest.*"
 ```
 **Expected Outcome**:

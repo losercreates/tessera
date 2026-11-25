@@ -10,6 +10,8 @@
 
 namespace tessera {
 
+class DistributedRateLimiter;
+
 class FailoverRouter : public ICompletionBackend {
  public:
   FailoverRouter(
@@ -17,9 +19,12 @@ class FailoverRouter : public ICompletionBackend {
       std::shared_ptr<ICircuitBreaker> primary_breaker,
       std::shared_ptr<IUpstreamClient> fallback_client,
       std::shared_ptr<ICircuitBreaker> fallback_breaker,
-      std::string fallback_model = "google/gemma-2-9b-it");
+      std::string fallback_model = "google/gemma-2-9b-it",
+      std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr);
 
   ~FailoverRouter() override = default;
+
+  void SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter);
 
   Status Complete(const ChatCompletionRequest& request, ChatCompletionResponse* response) override;
 
@@ -52,6 +57,7 @@ class FailoverRouter : public ICompletionBackend {
   mutable std::atomic<uint64_t> primary_failures_{0};
   mutable std::atomic<uint64_t> failover_attempts_{0};
   mutable std::atomic<uint64_t> direct_fallback_routes_{0};
+  mutable std::atomic<uint64_t> rate_limit_skips_{0};
   mutable std::atomic<uint64_t> fallback_successes_{0};
   mutable std::atomic<uint64_t> fallback_failures_{0};
   mutable std::atomic<uint64_t> all_providers_failed_{0};

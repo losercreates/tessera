@@ -275,3 +275,106 @@ TEST_F(ProviderRateIsolationIntegrationTest, EndToEndPipelineRateIsolation) {
     EXPECT_EQ(resp_loc.model, "local-llama");
   }
 }
+
+TEST_F(ProviderRateIsolationIntegrationTest, ThreeTierConcurrentBurstQuotaFailover) {
+  // Tier 1 = 10 RPM, Tier 2 = 15 RPM, Tier 3 = 25 RPM => 50 cumulative RPM across cascade
+  rate_limiter_->AddRule(RateLimitRule{
+      .provider = "burst_t1",
+      .window_name = "minute",
+      .capacity = 10.0,
+      .refill_rate_per_sec = 0.0, // zero refill during burst window so caps stay exact
+      .ttl_seconds = 60,
+  });
+  rate_limiter_->AddRule(RateLimitRule{
+      .provider = "burst_t2",
+      .window_name = "minute",
+      .capacity = 15.0,
+      .refill_rate_per_sec = 0.0,
+      .ttl_seconds = 60,
+  });
+  rate_limiter_->AddRule(RateLimitRule{
+      .provider = "burst_t3",
+      .window_name = "minute",
+      .capacity = 25.0,
+      .refill_rate_per_sec = 0.0,
+      .ttl_seconds = 60,
+  });
+
+  CircuitBreakerConfig b_cfg;
+  b_cfg.consecutive_failure_threshold = 3;
+  b_cfg.base_cooldown_ms = 500;
+  b_cfg.max_cooldown_ms = 2000;
+  b_cfg.trip_on_429 = true;
+
+  auto t1_client = std::make_shared<MockUpstreamClient>("burst_t1", "m1", "http://t1");
+  auto t2_client = std::make_shared<MockUpstreamClient>("burst_t2", "m2", "http://t2");
+  auto t3_client = std::make_shared<MockUpstreamClient>("burst_t3", "m3", "http://t3");
+  t1_client->SetDefaultResponseText("Served by T1");
+  t2_client->SetDefaultResponseText("Served by T2");
+  t3_client->SetDefaultResponseText("Served by T3");
+
+  auto t1_breaker = std::make_shared<CircuitBreaker>(b_cfg);
+  auto t2_breaker = std::make_shared<CircuitBreaker>(b_cfg);
+  auto t3_breaker = std::make_shared<CircuitBreaker>(b_cfg);
+
+  std::vector<CascadeTarget> targets = {
+      CascadeTarget{.client = t1_client, .breaker = t1_breaker, .target_model = "m1", .priority = 0},
+      CascadeTarget{.client = t2_client, .breaker = t2_breaker, .target_model = "m2", .priority = 1},
+      CascadeTarget{.client = t3_client, .breaker = t3_breaker, .target_model = "m3", .priority = 2},
+  };
+
+  auto cascade = std::make_shared<CascadeRouter>(targets, "3-tier-burst", rate_limiter_);
+
+  constexpr size_t kConcurrentRequests = 50;
+  std::barrier start_gate(static_cast<ptrdiff_t>(kConcurrentRequests));
+  std::vector<std::thread> threads;
+  threads.reserve(kConcurrentRequests);
+
+  std::atomic<size_t> successes{0};
+  std::atomic<size_t> failures{0};
+
+  for (size_t i = 0; i < kConcurrentRequests; ++i) {
+    threads.emplace_back([&, i]() {
+      start_gate.arrive_and_wait();
+      ChatCompletionRequest req;
+      req.correlation_id = "burst-" + std::to_string(i);
+      req.messages.push_back(ChatMessage{.role = "user", .content = "burst query " + std::to_string(i)});
+      req.no_cache = true;
+
+      ChatCompletionResponse resp;
+      Status st = cascade->Complete(req, &resp);
+      if (st.ok() && !resp.choices.empty()) {
+        successes.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        failures.fetch_add(1, std::memory_order_relaxed);
+      }
+    });
+  }
+
+  for (auto& th : threads) {
+    th.join();
+  }
+
+  // Zero dropped requests across combined 50-request cumulative capacity
+  EXPECT_EQ(successes.load(), 50u);
+  EXPECT_EQ(failures.load(), 0u);
+
+  // Strict per-tier quota compliance (zero overrun!)
+  EXPECT_EQ(t1_client->CallCount(), 10u);
+  EXPECT_EQ(t2_client->CallCount(), 15u);
+  EXPECT_EQ(t3_client->CallCount(), 25u);
+
+  // Local throttling must NEVER trip upstream outage circuit breakers
+  EXPECT_EQ(t1_breaker->GetState(), CircuitState::CLOSED);
+  EXPECT_EQ(t2_breaker->GetState(), CircuitState::CLOSED);
+  EXPECT_EQ(t3_breaker->GetState(), CircuitState::CLOSED);
+
+  // 51st request when ALL 3 tiers are at 0 remaining quota -> RESOURCE_EXHAUSTED
+  ChatCompletionRequest req51;
+  req51.correlation_id = "burst-51";
+  req51.messages.push_back(ChatMessage{.role = "user", .content = "overflow"});
+  ChatCompletionResponse resp51;
+  Status st51 = cascade->Complete(req51, &resp51);
+  EXPECT_FALSE(st51.ok());
+  EXPECT_EQ(st51.code, StatusCode::RESOURCE_EXHAUSTED);
+}

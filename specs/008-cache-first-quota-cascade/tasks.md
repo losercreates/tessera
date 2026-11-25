@@ -17,9 +17,9 @@
 
 **Purpose**: Extend shared cascade structs, stats snapshots, and CMake unit test registration.
 
-- [ ] T001 [P] Extend `CascadeTarget` with optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr` (keeping `priority = 0` default and `target_model` empty default) and add `uint64_t rate_limit_skips = 0` to `FailoverRouterStats` in `include/tessera/routing/circuit_types.hpp`
-- [ ] T002 [P] Add `uint64_t rate_limit_skips = 0` to `CascadeRouterStats` and declare optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr` constructor parameter and `SetRateLimiter()` method on `CascadeRouter` in `include/tessera/routing/cascade_router.hpp`
-- [ ] T003 [P] Register new unit test file `tests/unit/test_cache_first_cascade.cpp` under the `unit_tests` target in `CMakeLists.txt`
+- [x] T001 [P] Extend `CascadeTarget` with optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr` (keeping `priority = 0` default and `target_model` empty default) and add `uint64_t rate_limit_skips = 0` to `FailoverRouterStats` in `include/tessera/routing/circuit_types.hpp`
+- [x] T002 [P] Add `uint64_t rate_limit_skips = 0` to `CascadeRouterStats` and declare optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr` constructor parameter and `SetRateLimiter()` method on `CascadeRouter` in `include/tessera/routing/cascade_router.hpp`
+- [x] T003 [P] Register new unit test file `tests/unit/test_cache_first_cascade.cpp` under the `unit_tests` target in `CMakeLists.txt`
 
 ---
 
@@ -29,8 +29,8 @@
 
 **⚠️ CRITICAL**: No user story work should begin until this foundational phase is complete.
 
-- [ ] T004 [P] Add `virtual void CancelProbe() noexcept {}` to `ICircuitBreaker` in `include/tessera/routing/circuit_breaker.hpp` and override `CircuitBreaker::CancelProbe()` in `src/routing/circuit_breaker.cpp` (must reset `probe_in_flight_` to `false` only when `state_ == CircuitState::HALF_OPEN`, remaining a strict no-op in `CLOSED` or `OPEN` states)
-- [ ] T005 [P] Add `IncrementRateLimitSkipsTotal(std::string_view provider)` and `GetRateLimitSkipsTotal(std::string_view provider)` to `TelemetryRegistry` in `include/tessera/telemetry/telemetry_registry.hpp`, pre-seed registered providers to `0` on `RegisterProvider()` and clear on `Reset()`, and emit `# HELP`/`# TYPE gateway_ratelimit_skips_total counter` and `gateway_ratelimit_skips_total{provider="<name>"}` samples cleanly in `ToPrometheusFormat()` inside `src/telemetry/telemetry_registry.cpp` (ensuring local skips never populate `upstream_latency_ms`)
+- [x] T004 [P] Add `virtual void CancelProbe() noexcept {}` to `ICircuitBreaker` in `include/tessera/routing/circuit_breaker.hpp` and override `CircuitBreaker::CancelProbe()` in `src/routing/circuit_breaker.cpp` (must reset `probe_in_flight_` to `false` only when `state_ == CircuitState::HALF_OPEN`, remaining a strict no-op in `CLOSED` or `OPEN` states)
+- [x] T005 [P] Add `IncrementRateLimitSkipsTotal(std::string_view provider)` and `GetRateLimitSkipsTotal(std::string_view provider)` to `TelemetryRegistry` in `include/tessera/telemetry/telemetry_registry.hpp`, pre-seed registered providers to `0` on `RegisterProvider()` and clear on `Reset()`, and emit `# HELP`/`# TYPE gateway_ratelimit_skips_total counter` and `gateway_ratelimit_skips_total{provider="<name>"}` samples cleanly in `ToPrometheusFormat()` inside `src/telemetry/telemetry_registry.cpp` (ensuring local skips never populate `upstream_latency_ms`)
 
 **Checkpoint**: Foundational circuit safety and telemetry attribution APIs ready.
 
@@ -46,13 +46,13 @@
 
 > **NOTE: Write these tests FIRST and verify they fail before implementation changes**
 
-- [ ] T006 [P] [US1] Create unit tests verifying Tier 1 exact cache hit, Tier 2 semantic cache hit, 0 quota tokens deducted even at 0 remaining tokens (confirming rate-limiter `CheckAndConsume` / `EvalRateLimitLua` invocation count stays unchanged on cache hits per SC-005), and mixed `no_cache = true` bypass alongside concurrent cached replays in `tests/unit/test_cache_first_cascade.cpp`
-- [ ] T007 [P] [US1] Add integration test verifying fallback-tier completion (after Tier 1 quota/error failover) populates both cache tiers and subsequent replays consume 0 provider quota in `tests/integration/test_multi_provider_cascade.cpp`
+- [x] T006 [P] [US1] Create unit tests verifying Tier 1 exact cache hit, Tier 2 semantic cache hit, 0 quota tokens deducted even at 0 remaining tokens (confirming rate-limiter `CheckAndConsume` / `EvalRateLimitLua` invocation count stays unchanged on cache hits per SC-005), and mixed `no_cache = true` bypass alongside concurrent cached replays in `tests/unit/test_cache_first_cascade.cpp`
+- [x] T007 [P] [US1] Add integration test verifying fallback-tier completion (after Tier 1 quota/error failover) populates both cache tiers and subsequent replays consume 0 provider quota in `tests/integration/test_multi_provider_cascade.cpp`
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Add `std::shared_ptr<DistributedRateLimiter> rate_limiter_` support, `SetRateLimiter()`, and `ModelRouter::CreateFromRegistry(const ProviderRegistry& registry, std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr)` forwarding `rate_limiter` to default and dedicated provider cascades in `include/tessera/routing/model_router.hpp` and `src/routing/model_router.cpp`
-- [ ] T009 [US1] Restructure the server completion stack in `src/main.cpp` so `CachedCompletionBackend` wraps `ModelRouter::CreateFromRegistry(provider_registry, rate_limiter)` as the outermost backend (removing the outer pre-cache `RateLimitedBackend` wrapper) and update startup banner text to `Pipeline:   TwoTierCache -> ModelRouter (Quota-Aware Cascade)`
+- [x] T008 [US1] Add `std::shared_ptr<DistributedRateLimiter> rate_limiter_` support, `SetRateLimiter()`, and `ModelRouter::CreateFromRegistry(const ProviderRegistry& registry, std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr)` forwarding `rate_limiter` to default and dedicated provider cascades in `include/tessera/routing/model_router.hpp` and `src/routing/model_router.cpp`
+- [x] T009 [US1] Restructure the server completion stack in `src/main.cpp` so `CachedCompletionBackend` wraps `ModelRouter::CreateFromRegistry(provider_registry, rate_limiter)` as the outermost backend (removing the outer pre-cache `RateLimitedBackend` wrapper) and update startup banner text to `Pipeline:   TwoTierCache -> ModelRouter (Quota-Aware Cascade)`
 
 **Checkpoint**: User Story 1 (MVP) complete. Cache hits preempt all upstream quota deduction and serve traffic unimpeded under primary saturation.
 
@@ -66,14 +66,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T010 [P] [US2] Add unit tests verifying per-tier quota failover (`Tier 1 exhausted -> Tier 2 succeeds`), combined 3-tier `Tier 1 QUOTA_EXHAUSTED + Tier 2 OPEN circuit -> direct jump to Tier 3` recovery, zero token deduction when `breaker->CanAttempt() == false` (`OPEN`), `HALF_OPEN` `CancelProbe()` release on local quota exhaustion, fail-open behavior when rate-limiter store is unhealthy, and `Status::ResourceExhausted` return on all-quota exhaustion in `tests/unit/test_cascade_router.cpp`
-- [ ] T011 [P] [US2] Add unit tests validating `ModelRouter::CreateFromRegistry(registry, rate_limiter)` enforces isolated quotas across model-specific and default cascade routes in `tests/unit/test_model_router.cpp`
-- [ ] T012 [P] [US2] Add 3-tier concurrent burst quota-failover integration test verifying exact cumulative quota compliance (`T1=10, T2=15, T3=25`, 50 concurrent uncached requests -> 50/50 succeed with 0 dropped calls and exact per-tier dispatch counts) in `tests/integration/test_provider_rate_isolation.cpp`
+- [x] T010 [P] [US2] Add unit tests verifying per-tier quota failover (`Tier 1 exhausted -> Tier 2 succeeds`), combined 3-tier `Tier 1 QUOTA_EXHAUSTED + Tier 2 OPEN circuit -> direct jump to Tier 3` recovery, zero token deduction when `breaker->CanAttempt() == false` (`OPEN`), `HALF_OPEN` `CancelProbe()` release on local quota exhaustion, fail-open behavior when rate-limiter store is unhealthy, and `Status::ResourceExhausted` return on all-quota exhaustion in `tests/unit/test_cascade_router.cpp`
+- [x] T011 [P] [US2] Add unit tests validating `ModelRouter::CreateFromRegistry(registry, rate_limiter)` enforces isolated quotas across model-specific and default cascade routes in `tests/unit/test_model_router.cpp`
+- [x] T012 [P] [US2] Add 3-tier concurrent burst quota-failover integration test verifying exact cumulative quota compliance (`T1=10, T2=15, T3=25`, 50 concurrent uncached requests -> 50/50 succeed with 0 dropped calls and exact per-tier dispatch counts) in `tests/integration/test_provider_rate_isolation.cpp`
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Implement sequential per-candidate admission inside `CascadeRouter::Complete()` in `src/routing/cascade_router.cpp`: check `breaker->CanAttempt()` first (incrementing `direct_bypasses` without setting `progressed_past_rejection` and without consuming quota), evaluate `active_limiter->CheckAndConsume(prov_name, 1.0)` second (calling `breaker->CancelProbe()`, skipping `Execute()`, tracking `min_retry_after_ms`, setting `progressed_past_rejection = true`, and continuing to `i + 1` on denial), increment `failover_attempts` only when `progressed_past_rejection` is true, and return `Status::ResourceExhausted("Rate limit exceeded across all providers in route '" + route_id_ + "'. Retry after " + std::to_string(retry_ms) + "ms")` when only local quotas were exhausted or `Status::Unavailable` when upstream errors/open circuits occurred
-- [ ] T014 [US2] Extend `FailoverRouter` constructor with optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr`, forward it to the internal `CascadeRouter`, propagate `rate_limit_skips` stats, and preserve `StatusCode::RESOURCE_EXHAUSTED` returns in `include/tessera/routing/failover_router.hpp` and `src/routing/failover_router.cpp`
+- [x] T013 [US2] Implement sequential per-candidate admission inside `CascadeRouter::Complete()` in `src/routing/cascade_router.cpp`: check `breaker->CanAttempt()` first (incrementing `direct_bypasses` without setting `progressed_past_rejection` and without consuming quota), evaluate `active_limiter->CheckAndConsume(prov_name, 1.0)` second (calling `breaker->CancelProbe()`, skipping `Execute()`, tracking `min_retry_after_ms`, setting `progressed_past_rejection = true`, and continuing to `i + 1` on denial), increment `failover_attempts` only when `progressed_past_rejection` is true, and return `Status::ResourceExhausted("Rate limit exceeded across all providers in route '" + route_id_ + "'. Retry after " + std::to_string(retry_ms) + "ms")` when only local quotas were exhausted or `Status::Unavailable` when upstream errors/open circuits occurred
+- [x] T014 [US2] Extend `FailoverRouter` constructor with optional `std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr`, forward it to the internal `CascadeRouter`, propagate `rate_limit_skips` stats, and preserve `StatusCode::RESOURCE_EXHAUSTED` returns in `include/tessera/routing/failover_router.hpp` and `src/routing/failover_router.cpp`
 
 **Checkpoint**: User Story 2 complete. Local token-bucket depletion triggers zero-loss cascade failover with exact quota compliance and deadlock-free `HALF_OPEN` probing.
 
@@ -87,13 +87,13 @@
 
 ### Tests for User Story 3
 
-- [ ] T015 [P] [US3] Add unit tests verifying `IncrementRateLimitSkipsTotal` / `GetRateLimitSkipsTotal`, Prometheus `gateway_ratelimit_skips_total{provider="..."}` rendering, and `Reset()` cleanup in `tests/unit/test_telemetry.cpp`
-- [ ] T016 [US3] Add unit tests asserting local rate-limit skips keep Tier 1 circuit `CLOSED` (0 false trips), avoid polluting `upstream_latency_ms` for skipped tiers, increment `rate_limit_skips` + `failover_attempts`, and do not double-count `failover_attempts` after pure `OPEN`-circuit `direct_bypasses` in `tests/unit/test_cascade_router.cpp` (depends on T010)
+- [x] T015 [P] [US3] Add unit tests verifying `IncrementRateLimitSkipsTotal` / `GetRateLimitSkipsTotal`, Prometheus `gateway_ratelimit_skips_total{provider="..."}` rendering, and `Reset()` cleanup in `tests/unit/test_telemetry.cpp`
+- [x] T016 [US3] Add unit tests asserting local rate-limit skips keep Tier 1 circuit `CLOSED` (0 false trips), avoid polluting `upstream_latency_ms` for skipped tiers, increment `rate_limit_skips` + `failover_attempts`, and do not double-count `failover_attempts` after pure `OPEN`-circuit `direct_bypasses` in `tests/unit/test_cascade_router.cpp` (depends on T010)
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Wire `TelemetryRegistry::Instance().IncrementRateLimitSkipsTotal(prov_name)` on local quota skips inside `CascadeRouter::Complete()` in `src/routing/cascade_router.cpp` (depends on T005, T013)
-- [ ] T018 [US3] Verify Prometheus format compliance and ensure `scripts/verify_metrics_format.sh` cleanly accepts `gateway_ratelimit_skips_total` alongside dynamic provider series in `scripts/verify_metrics_format.sh`
+- [x] T017 [US3] Wire `TelemetryRegistry::Instance().IncrementRateLimitSkipsTotal(prov_name)` on local quota skips inside `CascadeRouter::Complete()` in `src/routing/cascade_router.cpp` (depends on T005, T013)
+- [x] T018 [US3] Verify Prometheus format compliance and ensure `scripts/verify_metrics_format.sh` cleanly accepts `gateway_ratelimit_skips_total` alongside dynamic provider series in `scripts/verify_metrics_format.sh`
 
 **Checkpoint**: User Story 3 complete. Telemetry, circuit states, and failover counters accurately separate local quota throttling from upstream outages.
 
@@ -103,8 +103,8 @@
 
 **Purpose**: Final documentation alignment, compiler warning checks, and full ASan/UBSan quickstart verification.
 
-- [ ] T019 [P] Verify pipeline diagram/notes and check if `evaluation_harness` / `quickstart.md` documentation aligns with Feature 008 behavior in `specs/008-cache-first-quota-cascade/quickstart.md`
-- [ ] T020 Build all targets under Debug + ASan/UBSan (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion`) and execute full `ctest --test-dir build --output-on-failure` plus all quickstart validation scenarios from `specs/008-cache-first-quota-cascade/quickstart.md`
+- [x] T019 [P] Verify pipeline diagram/notes and check if `evaluation_harness` / `quickstart.md` documentation aligns with Feature 008 behavior in `specs/008-cache-first-quota-cascade/quickstart.md`
+- [x] T020 Build all targets under Debug + ASan/UBSan (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion`) and execute full `ctest --test-dir build --output-on-failure` plus all quickstart validation scenarios from `specs/008-cache-first-quota-cascade/quickstart.md`
 
 ---
 

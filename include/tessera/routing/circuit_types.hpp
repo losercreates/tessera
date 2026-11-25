@@ -16,6 +16,7 @@ namespace tessera {
 
 class IUpstreamClient;
 class ICircuitBreaker;
+class DistributedRateLimiter;
 
 enum class CircuitState : uint8_t {
   CLOSED = 0,     // Normal healthy state. Requests pass through.
@@ -156,6 +157,7 @@ struct CascadeTarget {
   std::shared_ptr<ICircuitBreaker> breaker;
   std::string target_model;
   uint32_t priority = 0;
+  std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr;
 };
 
 struct CascadeRoute {
@@ -184,6 +186,7 @@ struct FailoverRouterStats {
   uint64_t primary_failures = 0;
   uint64_t failover_attempts = 0;                      // In-flight transparent retries
   uint64_t direct_fallback_routes = 0;                 // Dispatched to fallback because primary was OPEN
+  uint64_t rate_limit_skips = 0;                       // Skipped due to local distributed quota exhaustion
   uint64_t fallback_successes = 0;
   uint64_t fallback_failures = 0;
   uint64_t all_providers_failed = 0;

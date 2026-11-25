@@ -154,6 +154,7 @@ if(BUILD_TESTS)
     tests/unit/test_provider_registry.cpp
     tests/unit/test_cascade_router.cpp
     tests/unit/test_model_router.cpp
+    tests/unit/test_cache_first_cascade.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)

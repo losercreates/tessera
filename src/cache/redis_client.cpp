@@ -76,6 +76,7 @@ std::vector<int64_t> MockRedisClient::EvalRateLimitLua(
     double fill_rate,
     uint32_t /*ttl_seconds*/) {
   std::lock_guard<std::mutex> lock(state_->mutex);
+  state_->lua_eval_count.fetch_add(1, std::memory_order_relaxed);
   if (state_->simulate_failure || !state_->connected) {
     return {1, static_cast<int64_t>(capacity), 0};  // fail-open
   }

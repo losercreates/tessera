@@ -12,19 +12,29 @@
 
 namespace tessera {
 
+class DistributedRateLimiter;
+
 struct CascadeRouterStats {
   uint64_t total_requests = 0;
   uint64_t successful_requests = 0;
   uint64_t failed_requests = 0;
   uint64_t failover_attempts = 0;
   uint64_t direct_bypasses = 0;
+  uint64_t rate_limit_skips = 0;
   uint64_t all_providers_failed = 0;
 };
 
 class CascadeRouter : public ICompletionBackend {
  public:
-  CascadeRouter(std::vector<CascadeTarget> targets, std::string route_id = "default");
+  CascadeRouter(
+      std::vector<CascadeTarget> targets,
+      std::string route_id = "default",
+      std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr);
   ~CascadeRouter() override = default;
+
+  void SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter) {
+    rate_limiter_ = std::move(rate_limiter);
+  }
 
   Status Complete(const ChatCompletionRequest& request, ChatCompletionResponse* response) override;
 
@@ -50,6 +60,7 @@ class CascadeRouter : public ICompletionBackend {
  private:
   std::vector<CascadeTarget> targets_;
   std::string route_id_;
+  std::shared_ptr<DistributedRateLimiter> rate_limiter_;
   mutable std::mutex stats_mutex_;
   CascadeRouterStats stats_;
 };

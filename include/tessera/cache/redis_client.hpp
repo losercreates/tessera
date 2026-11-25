@@ -7,6 +7,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 
 namespace tessera {
 
@@ -51,6 +52,7 @@ struct MockRedisSharedState {
 
   std::unordered_map<std::string, ValueEntry> store;
   std::unordered_map<std::string, BucketEntry> ratelimit_store;
+  std::atomic<uint64_t> lua_eval_count{0};
 };
 
 // Thread-safe in-memory MockRedisClient for unit testing
@@ -92,6 +94,7 @@ class MockRedisClient : public IRedisClient {
     std::lock_guard<std::mutex> lock(state_->mutex);
     state_->store.clear();
     state_->ratelimit_store.clear();
+    state_->lua_eval_count.store(0, std::memory_order_relaxed);
   }
 
   void SetSimulateFailure(bool fail) {

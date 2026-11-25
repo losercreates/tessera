@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "tessera/routing/cascade_router.hpp"
 #include "tessera/backend/mock_upstream_client.hpp"
+#include "tessera/ratelimit/rate_limiter.hpp"
 #include "tessera/routing/circuit_breaker.hpp"
 #include "tessera/telemetry/telemetry_registry.hpp"
 
@@ -131,4 +132,195 @@ TEST_F(CascadeRouterTest, RejectsNullResponsePointer) {
   Status st = router_->Complete(req, nullptr);
   EXPECT_FALSE(st.ok());
   EXPECT_EQ(st.code, StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_F(CascadeRouterTest, LocalQuotaExhaustionTriggersFailoverWithoutTrippingBreaker) {
+  auto mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pcfg;
+  pcfg.min_connections = 1;
+  pcfg.max_connections = 4;
+  auto pool = std::make_shared<RedisConnectionPool>(pcfg, mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+
+  // Tier 1 allows 1 RPM; Tier 2 allows 5 RPM; Tier 3 allows 5 RPM
+  limiter->AddRule(RateLimitRule{.provider = "tier1", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+  limiter->AddRule(RateLimitRule{.provider = "tier2", .window_name = "minute", .capacity = 5.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+  limiter->AddRule(RateLimitRule{.provider = "tier3", .window_name = "minute", .capacity = 5.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+
+  tier1_client_->SetDefaultResponseText("From tier1");
+  tier2_client_->SetDefaultResponseText("From tier2");
+  tier3_client_->SetDefaultResponseText("From tier3");
+
+  router_->SetRateLimiter(limiter);
+
+  ChatCompletionRequest req;
+  req.correlation_id = "rl-test-1";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "req1"});
+
+  // Req 1 succeeds on Tier 1
+  ChatCompletionResponse resp1;
+  ASSERT_TRUE(router_->Complete(req, &resp1).ok());
+  EXPECT_EQ(resp1.choices[0].message.content, "From tier1");
+  EXPECT_EQ(tier1_client_->CallCount(), 1u);
+
+  // Req 2: Tier 1 quota depleted -> skips Tier 1 with ZERO upstream call -> completes on Tier 2
+  req.correlation_id = "rl-test-2";
+  ChatCompletionResponse resp2;
+  ASSERT_TRUE(router_->Complete(req, &resp2).ok());
+  EXPECT_EQ(resp2.choices[0].message.content, "From tier2");
+  EXPECT_EQ(tier1_client_->CallCount(), 1u); // Zero wasted upstream call to Tier 1!
+  EXPECT_EQ(tier2_client_->CallCount(), 1u);
+  EXPECT_EQ(tier1_breaker_->GetState(), CircuitState::CLOSED);
+
+  auto stats = router_->GetStats();
+  EXPECT_EQ(stats.rate_limit_skips, 1u);
+  EXPECT_EQ(stats.failover_attempts, 1u);
+
+  // Combined edge case: Tier 1 QUOTA_EXHAUSTED + Tier 2 circuit OPEN -> jumps straight to Tier 3!
+  tier2_breaker_->ForceState(CircuitState::OPEN);
+  auto evals_before_open_skip = mock_redis->GetSharedState()->lua_eval_count.load();
+
+  req.correlation_id = "rl-test-3";
+  ChatCompletionResponse resp3;
+  ASSERT_TRUE(router_->Complete(req, &resp3).ok());
+  EXPECT_EQ(resp3.choices[0].message.content, "From tier3");
+  EXPECT_EQ(tier1_client_->CallCount(), 1u);
+  EXPECT_EQ(tier2_client_->CallCount(), 1u);
+  EXPECT_EQ(tier3_client_->CallCount(), 1u);
+
+  // Only Tier 1 (quota check -> denied) and Tier 3 (quota check -> allowed) evaluated Redis Lua;
+  // Tier 2 (circuit OPEN) MUST NOT deduct or check quota!
+  EXPECT_EQ(mock_redis->GetSharedState()->lua_eval_count.load() - evals_before_open_skip, 2u);
+}
+
+TEST_F(CascadeRouterTest, HalfOpenProbeDeniedByLocalQuotaReleasesProbeSlot) {
+  auto mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pcfg;
+  auto pool = std::make_shared<RedisConnectionPool>(pcfg, mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+
+  // Consume Tier 1's 1 token cleanly BEFORE tripping Tier 1 to HALF_OPEN
+  limiter->AddRule(RateLimitRule{.provider = "tier1", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+  ASSERT_TRUE(limiter->CheckAndConsume("tier1", 1.0).allowed);
+
+  // Put Tier 1 in HALF_OPEN, Tier 2 healthy
+  tier1_breaker_->ForceState(CircuitState::HALF_OPEN);
+  tier1_client_->SetDefaultResponseText("Tier1 recovered");
+  tier2_client_->SetDefaultResponseText("Tier2 fallback");
+
+  router_->SetRateLimiter(limiter);
+
+  ChatCompletionRequest req;
+  req.correlation_id = "half-open-quota";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "probe"});
+
+  // Req 1: Tier 1 CanAttempt() grants HALF_OPEN probe, then limiter denies quota ->
+  // CancelProbe() MUST release probe_in_flight_, failing over to Tier 2.
+  ChatCompletionResponse resp1;
+  ASSERT_TRUE(router_->Complete(req, &resp1).ok());
+  EXPECT_EQ(resp1.choices[0].message.content, "Tier2 fallback");
+  EXPECT_EQ(tier1_breaker_->GetState(), CircuitState::HALF_OPEN);
+
+  // Now refill/replenish Tier 1 quota: the released probe slot allows Tier 1 trial probe to execute!
+  mock_redis->Clear();
+  limiter->ClearRules("tier1");
+  limiter->AddRule(RateLimitRule{.provider = "tier1", .window_name = "minute", .capacity = 5.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+
+  ChatCompletionResponse resp2;
+  ASSERT_TRUE(router_->Complete(req, &resp2).ok());
+  EXPECT_EQ(resp2.choices[0].message.content, "Tier1 recovered");
+  EXPECT_EQ(tier1_breaker_->GetState(), CircuitState::CLOSED);
+}
+
+TEST_F(CascadeRouterTest, AllLocalQuotasExhaustedReturnsResourceExhaustedAndFailsOpenIfRedisDown) {
+  auto mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pcfg;
+  auto pool = std::make_shared<RedisConnectionPool>(pcfg, mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+
+  // Exhaust single-tier or all-tier buckets cleanly
+  limiter->AddRule(RateLimitRule{.provider = "tier1", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 1.0 / 60.0, .ttl_seconds = 60});
+  limiter->AddRule(RateLimitRule{.provider = "tier2", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 2.0 / 60.0, .ttl_seconds = 60});
+  limiter->AddRule(RateLimitRule{.provider = "tier3", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 3.0 / 60.0, .ttl_seconds = 60});
+
+  ASSERT_TRUE(limiter->CheckAndConsume("tier1", 1.0).allowed);
+  ASSERT_TRUE(limiter->CheckAndConsume("tier2", 1.0).allowed);
+  ASSERT_TRUE(limiter->CheckAndConsume("tier3", 1.0).allowed);
+
+  router_->SetRateLimiter(limiter);
+
+  ChatCompletionRequest req;
+  req.correlation_id = "all-rl-exhausted";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "blocked"});
+
+  ChatCompletionResponse resp;
+  Status st = router_->Complete(req, &resp);
+  EXPECT_FALSE(st.ok());
+  EXPECT_EQ(st.code, StatusCode::RESOURCE_EXHAUSTED);
+  EXPECT_NE(st.message.find("Rate limit exceeded"), std::string::npos);
+  EXPECT_NE(st.message.find("Retry after "), std::string::npos);
+
+  // Outage circuit breakers stay CLOSED because all rejections were proactive local limits
+  EXPECT_EQ(tier1_breaker_->GetState(), CircuitState::CLOSED);
+  EXPECT_EQ(tier2_breaker_->GetState(), CircuitState::CLOSED);
+  EXPECT_EQ(tier3_breaker_->GetState(), CircuitState::CLOSED);
+
+  // Fail-open resilience: if Redis store goes down, cascade falls through to Tier 1 cleanly!
+  mock_redis->SetSimulateFailure(true);
+  mock_redis->Disconnect();
+  pool->SetHealthy(false);
+
+  tier1_client_->SetDefaultResponseText("Fail-open recovery");
+  ChatCompletionResponse resp_fo;
+  Status st_fo = router_->Complete(req, &resp_fo);
+  EXPECT_TRUE(st_fo.ok());
+  EXPECT_EQ(resp_fo.choices[0].message.content, "Fail-open recovery");
+}
+
+TEST_F(CascadeRouterTest, AccurateTelemetryAndNoDoubleCountAfterOpenBypass) {
+  auto mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pcfg;
+  auto pool = std::make_shared<RedisConnectionPool>(pcfg, mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+
+  // Exhaust Tier 1 locally; leave Tier 2 available
+  limiter->AddRule(RateLimitRule{.provider = "tier1", .window_name = "minute", .capacity = 1.0, .refill_rate_per_sec = 0.0, .ttl_seconds = 60});
+  ASSERT_TRUE(limiter->CheckAndConsume("tier1", 1.0).allowed);
+
+  tier2_client_->SetDefaultResponseText("Handled by tier2");
+  router_->SetRateLimiter(limiter);
+
+  ChatCompletionRequest req;
+  req.correlation_id = "attr-test-1";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "attribution"});
+
+  ChatCompletionResponse resp1;
+  ASSERT_TRUE(router_->Complete(req, &resp1).ok());
+
+  // Tier 1 skipped locally: circuit stays CLOSED, 0 latency samples on Tier 1, 1 local skip in Telemetry
+  EXPECT_EQ(tier1_breaker_->GetState(), CircuitState::CLOSED);
+  EXPECT_EQ(TelemetryRegistry::Instance().GetRateLimitSkipsTotal("tier1"), 1u);
+  EXPECT_EQ(TelemetryRegistry::Instance().GetUpstreamLatencySnapshot("tier1").total_count, 0u);
+  EXPECT_EQ(TelemetryRegistry::Instance().GetRequestsTotal("model1", "tier1", "429"), 0u);
+
+  // Tier 2 actually executed: received latency sample + 200 counter
+  EXPECT_EQ(TelemetryRegistry::Instance().GetUpstreamLatencySnapshot("tier2").total_count, 1u);
+  EXPECT_EQ(TelemetryRegistry::Instance().GetRequestsTotal("model2", "tier2", "200"), 1u);
+
+  auto s1 = router_->GetStats();
+  EXPECT_EQ(s1.rate_limit_skips, 1u);
+  EXPECT_EQ(s1.failover_attempts, 1u);
+
+  // Now force Tier 1 OPEN and replenish quota (reset rule):
+  // Pure OPEN bypass MUST increment direct_bypasses and MUST NOT double-count failover_attempts!
+  limiter->ClearRules("tier1");
+  tier1_breaker_->ForceState(CircuitState::OPEN);
+
+  ChatCompletionResponse resp2;
+  req.correlation_id = "attr-test-2";
+  ASSERT_TRUE(router_->Complete(req, &resp2).ok());
+
+  auto s2 = router_->GetStats();
+  EXPECT_EQ(s2.direct_bypasses, 1u);
+  EXPECT_EQ(s2.failover_attempts, 1u); // Unchanged! Not double-counted after direct OPEN bypass
 }

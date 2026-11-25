@@ -118,6 +118,12 @@ void CircuitBreaker::RecordFailure(int status_code, std::string_view error_messa
   }
 }
 
+void CircuitBreaker::CancelProbe() noexcept {
+  if (state_.load(std::memory_order_acquire) == CircuitState::HALF_OPEN) {
+    probe_in_flight_.store(false, std::memory_order_release);
+  }
+}
+
 CircuitState CircuitBreaker::GetState() const noexcept {
   return state_.load(std::memory_order_acquire);
 }

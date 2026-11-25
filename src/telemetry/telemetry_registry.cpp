@@ -16,6 +16,10 @@ TelemetryRegistry::TelemetryRegistry() {
   // Pre-seed latency histograms
   latency_histograms_["groq"] = std::make_shared<Histogram>();
   latency_histograms_["openrouter"] = std::make_shared<Histogram>();
+
+  // Pre-seed rate-limit skip counters
+  ratelimit_skips_counters_["groq"] = std::make_shared<std::atomic<uint64_t>>(0);
+  ratelimit_skips_counters_["openrouter"] = std::make_shared<std::atomic<uint64_t>>(0);
 }
 
 void TelemetryRegistry::IncrementRequestsTotal(
@@ -97,6 +101,35 @@ void TelemetryRegistry::RegisterProvider(std::string_view provider) {
   if (latency_histograms_.find(prov) == latency_histograms_.end()) {
     latency_histograms_[prov] = std::make_shared<Histogram>();
   }
+  if (ratelimit_skips_counters_.find(prov) == ratelimit_skips_counters_.end()) {
+    ratelimit_skips_counters_[prov] = std::make_shared<std::atomic<uint64_t>>(0);
+  }
+}
+
+void TelemetryRegistry::IncrementRateLimitSkipsTotal(std::string_view provider) {
+  std::string prov(provider);
+  std::shared_ptr<std::atomic<uint64_t>> counter;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = ratelimit_skips_counters_.find(prov);
+    if (it != ratelimit_skips_counters_.end()) {
+      counter = it->second;
+    } else {
+      counter = std::make_shared<std::atomic<uint64_t>>(0);
+      ratelimit_skips_counters_[prov] = counter;
+    }
+  }
+  counter->fetch_add(1, std::memory_order_relaxed);
+}
+
+uint64_t TelemetryRegistry::GetRateLimitSkipsTotal(std::string_view provider) const {
+  std::string prov(provider);
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = ratelimit_skips_counters_.find(prov);
+  if (it != ratelimit_skips_counters_.end()) {
+    return it->second->load(std::memory_order_relaxed);
+  }
+  return 0;
 }
 
 uint64_t TelemetryRegistry::GetRequestsTotal(
@@ -211,12 +244,24 @@ std::string TelemetryRegistry::ToPrometheusFormat() const {
     }
   }
 
+  // 5. gateway_ratelimit_skips_total
+  oss << "\n# HELP gateway_ratelimit_skips_total Total number of upstream dispatches skipped due to local rate limit exhaustion\n";
+  oss << "# TYPE gateway_ratelimit_skips_total counter\n";
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [provider, counter] : ratelimit_skips_counters_) {
+      oss << "gateway_ratelimit_skips_total{provider=\"" << provider << "\"} "
+          << counter->load(std::memory_order_relaxed) << "\n";
+    }
+  }
+
   return oss.str();
 }
 
 void TelemetryRegistry::Reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   requests_counters_.clear();
+  ratelimit_skips_counters_.clear();
   exact_cache_hits_.store(0, std::memory_order_relaxed);
   semantic_cache_hits_.store(0, std::memory_order_relaxed);
   cache_misses_.store(0, std::memory_order_relaxed);

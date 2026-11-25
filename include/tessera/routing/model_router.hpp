@@ -12,6 +12,8 @@
 
 namespace tessera {
 
+class DistributedRateLimiter;
+
 class ModelRouter : public ICompletionBackend {
  public:
   ModelRouter();
@@ -30,6 +32,7 @@ class ModelRouter : public ICompletionBackend {
   void RegisterRoute(std::string pattern, std::shared_ptr<CascadeRouter> cascade);
   void RegisterRoute(std::string pattern, std::vector<CascadeTarget> targets);
   void SetDefaultCascade(std::shared_ptr<CascadeRouter> cascade);
+  void SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter);
 
   /**
    * Model resolution
@@ -51,10 +54,13 @@ class ModelRouter : public ICompletionBackend {
   /**
    * Factory constructing a ModelRouter populated with providers and defaults from ProviderRegistry
    */
-  static std::shared_ptr<ModelRouter> CreateFromRegistry(const ProviderRegistry& registry);
+  static std::shared_ptr<ModelRouter> CreateFromRegistry(
+      const ProviderRegistry& registry,
+      std::shared_ptr<DistributedRateLimiter> rate_limiter = nullptr);
 
  private:
   mutable std::mutex mutex_;
+  std::shared_ptr<DistributedRateLimiter> rate_limiter_;
   std::shared_ptr<CascadeRouter> default_cascade_;
   std::unordered_map<std::string, std::shared_ptr<CascadeRouter>> exact_routes_;
   std::unordered_map<std::string, std::shared_ptr<CascadeRouter>> wildcard_routes_; // prefix without "/*"

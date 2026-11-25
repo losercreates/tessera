@@ -74,7 +74,11 @@ check_pattern "upstream_latency_ms_bucket\{provider=\".*\",le=\".*\"\}" "upstrea
 check_pattern "upstream_latency_ms_sum\{provider=\".*\"\}" "upstream_latency_ms histogram sum sample"
 check_pattern "upstream_latency_ms_count\{provider=\".*\"\}" "upstream_latency_ms histogram count sample"
 
-# 5. Dynamic per-provider verification
+# 5. gateway_ratelimit_skips_total
+check_pattern "# HELP gateway_ratelimit_skips_total" "HELP gateway_ratelimit_skips_total descriptor"
+check_pattern "# TYPE gateway_ratelimit_skips_total counter" "TYPE gateway_ratelimit_skips_total counter declaration"
+
+# 6. Dynamic per-provider verification
 PROVIDERS_TO_VERIFY="${2:-${TESSERA_PROVIDERS:-}}"
 
 if [ -n "$PROVIDERS_TO_VERIFY" ]; then

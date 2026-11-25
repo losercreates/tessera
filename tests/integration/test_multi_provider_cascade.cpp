@@ -9,6 +9,7 @@
 #include "tessera/cache/vector_store.hpp"
 #include "tessera/cache/redis_pool.hpp"
 #include "tessera/routing/circuit_breaker.hpp"
+#include "tessera/ratelimit/rate_limiter.hpp"
 #include "tessera/telemetry/telemetry_registry.hpp"
 #include <atomic>
 #include <thread>
@@ -161,4 +162,70 @@ TEST_F(MultiProviderCascadeIntegrationTest, CachePreemptionBypassesCascadeDispat
   EXPECT_TRUE(resp3.cache_hit);
   EXPECT_EQ(p1_breaker_->GetState(), CircuitState::CLOSED); // Breaker untouched!
   EXPECT_EQ(p1_client_->CallCount(), 1u);
+}
+
+TEST_F(MultiProviderCascadeIntegrationTest, FallbackCompletionPopulatesCacheAndPreemptsQuota) {
+  auto rl_mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pool_cfg;
+  pool_cfg.min_connections = 2;
+  pool_cfg.max_connections = 4;
+  auto rl_pool = std::make_shared<RedisConnectionPool>(pool_cfg, rl_mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(rl_pool);
+
+  // P1 quota exhausted immediately via 1 initial call; P2 has 5 capacity
+  limiter->AddRule(RateLimitRule{
+      .provider = "ollama_local",
+      .window_name = "minute",
+      .capacity = 1.0,
+      .refill_rate_per_sec = 1.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  limiter->AddRule(RateLimitRule{
+      .provider = "groq_cloud",
+      .window_name = "minute",
+      .capacity = 5.0,
+      .refill_rate_per_sec = 5.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+
+  // Reset P1 and P2 fresh clients wrapped in a quota-aware CascadeRouter + CachedCompletionBackend
+  p1_client_->SetDefaultResponseText("P1 primary reply");
+  p2_client_->SetDefaultResponseText("P2 fallback recovered reply");
+  auto quota_cascade = std::make_shared<CascadeRouter>(targets_, "quota-cached-cascade", limiter);
+  auto stack = std::make_shared<CachedCompletionBackend>(quota_cascade, two_tier_cache_);
+
+  // Exhaust P1's sole token directly via an uncached prompt
+  ChatCompletionRequest req_drain;
+  req_drain.correlation_id = "drain-p1";
+  req_drain.messages.push_back(ChatMessage{
+      .role = "user",
+      .content = "What is the capital of france paris europe germany berlin"});
+  ChatCompletionResponse resp_drain;
+  ASSERT_TRUE(stack->Complete(req_drain, &resp_drain).ok());
+  EXPECT_EQ(p1_client_->CallCount(), 1u);
+
+  // Next uncached request misses P1 due to exhausted local quota -> fails over to P2 and populates caches!
+  ChatCompletionRequest req_failover;
+  req_failover.correlation_id = "fallback-warm";
+  req_failover.messages.push_back(ChatMessage{
+      .role = "user",
+      .content = "Explain quantum physics science computer programming gateway cache semantic exact redis"});
+  ChatCompletionResponse resp_failover;
+  ASSERT_TRUE(stack->Complete(req_failover, &resp_failover).ok());
+  EXPECT_FALSE(resp_failover.cache_hit);
+  EXPECT_EQ(resp_failover.choices[0].message.content, "P2 fallback recovered reply");
+  EXPECT_EQ(p1_client_->CallCount(), 1u); // P1 skipped!
+  EXPECT_EQ(p2_client_->CallCount(), 1u); // P2 served & populated cache
+
+  uint64_t lua_evals_before_replay = rl_mock_redis->GetSharedState()->lua_eval_count.load();
+
+  // Exact replay of fallback-populated entry -> Tier 1 hit, 0 Lua calls, 0 upstream calls
+  ChatCompletionResponse resp_exact;
+  ASSERT_TRUE(stack->Complete(req_failover, &resp_exact).ok());
+  EXPECT_TRUE(resp_exact.cache_hit);
+  EXPECT_EQ(resp_exact.cache_tier, "exact");
+  EXPECT_EQ(resp_exact.choices[0].message.content, "P2 fallback recovered reply");
+  EXPECT_EQ(rl_mock_redis->GetSharedState()->lua_eval_count.load(), lua_evals_before_replay);
+  EXPECT_EQ(p1_client_->CallCount(), 1u);
+  EXPECT_EQ(p2_client_->CallCount(), 1u);
 }

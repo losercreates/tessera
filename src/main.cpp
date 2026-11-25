@@ -103,27 +103,15 @@ int main(int argc, char** argv) {
   // Resilient Multi-Provider Routing & Registry:
   auto provider_registry = tessera::ProviderRegistry::LoadFromEnvironment(true);
 
-  // Rate Limiting Engine:
+  // Rate Limiting Engine (enforced per candidate inside ModelRouter / CascadeRouter):
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
   provider_registry.RegisterRateLimits(*rate_limiter);
 
-  // Dynamic Model Router & Cascading Fallback Engine:
-  auto model_router = tessera::ModelRouter::CreateFromRegistry(provider_registry);
+  // Dynamic Model Router & Quota-Aware Cascading Fallback Engine:
+  auto model_router = tessera::ModelRouter::CreateFromRegistry(provider_registry, rate_limiter);
 
-  // Pipeline: ModelRouter (Cascade) -> CachedCompletionBackend (Two-Tier) -> RateLimitedBackend
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(model_router, two_tier_cache);
-  auto providers = provider_registry.GetRegisteredProviders();
-  std::string default_prov = providers.empty() ? "default" : providers.front();
-  auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, default_prov);
-
-  pipeline->SetProviderResolver([model_router](std::string_view model) -> std::string {
-    std::string remapped;
-    auto cascade = model_router->ResolveCascade(model, &remapped);
-    if (cascade && !cascade->Targets().empty()) {
-      return std::string(cascade->Targets()[0].client->ProviderName());
-    }
-    return "";
-  });
+  // Pipeline: TwoTierCache (Preemption) -> ModelRouter (Per-Tier Quota & Cascade)
+  auto pipeline = std::make_shared<tessera::CachedCompletionBackend>(model_router, two_tier_cache);
 
   tessera::GatewayServer server(config, pipeline);
   tessera::GatewayServer::RegisterSignalHandler(&server);
@@ -150,7 +138,7 @@ int main(int argc, char** argv) {
   }
   std::cout << "]\n";
 
-  std::cout << " Pipeline:   RateLimit -> TwoTierCache -> ModelRouter (Dynamic Cascade)\n";
+  std::cout << " Pipeline:   TwoTierCache -> ModelRouter (Quota-Aware Cascade)\n";
   std::cout << "=======================================================\n\n";
 
   server.Wait();

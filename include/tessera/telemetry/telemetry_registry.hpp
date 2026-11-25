@@ -23,6 +23,8 @@ class TelemetryRegistry {
 
   void IncrementCacheHitsTotal(std::string_view tier); // "exact", "semantic", "miss"
 
+  void IncrementRateLimitSkipsTotal(std::string_view provider);
+
   void SetCircuitBreakerState(std::string_view provider, CircuitState state);
 
   void RecordUpstreamLatency(std::string_view provider, double latency_ms);
@@ -36,6 +38,7 @@ class TelemetryRegistry {
   // Test inspection hooks
   [[nodiscard]] uint64_t GetRequestsTotal(std::string_view model, std::string_view provider, std::string_view status_code) const;
   [[nodiscard]] uint64_t GetCacheHitsTotal(std::string_view tier) const;
+  [[nodiscard]] uint64_t GetRateLimitSkipsTotal(std::string_view provider) const;
   [[nodiscard]] uint32_t GetCircuitBreakerState(std::string_view provider) const;
   [[nodiscard]] HistogramSnapshot GetUpstreamLatencySnapshot(std::string_view provider) const;
   [[nodiscard]] std::vector<std::string> GetTrackedProviders() const;
@@ -51,6 +54,9 @@ class TelemetryRegistry {
 
   // Requests counter map: key = "model:provider:status" -> atomic counter
   std::map<std::string, std::shared_ptr<std::atomic<uint64_t>>> requests_counters_;
+
+  // Local rate limit skip counters: provider -> atomic counter
+  std::map<std::string, std::shared_ptr<std::atomic<uint64_t>>> ratelimit_skips_counters_;
 
   // Cache hits counter map: key = tier ("exact", "semantic", "miss") -> atomic counter
   std::atomic<uint64_t> exact_cache_hits_{0};

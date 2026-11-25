@@ -1,4 +1,5 @@
 #include "tessera/routing/model_router.hpp"
+#include "tessera/ratelimit/rate_limiter.hpp"
 #include "tessera/common/logger.hpp"
 #include <algorithm>
 #include <sstream>
@@ -24,13 +25,32 @@ void ModelRouter::RegisterRoute(std::string pattern, std::shared_ptr<CascadeRout
 }
 
 void ModelRouter::RegisterRoute(std::string pattern, std::vector<CascadeTarget> targets) {
-  auto cascade = std::make_shared<CascadeRouter>(std::move(targets), pattern);
+  std::shared_ptr<DistributedRateLimiter> limiter;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    limiter = rate_limiter_;
+  }
+  auto cascade = std::make_shared<CascadeRouter>(std::move(targets), pattern, std::move(limiter));
   RegisterRoute(std::move(pattern), std::move(cascade));
 }
 
 void ModelRouter::SetDefaultCascade(std::shared_ptr<CascadeRouter> cascade) {
   std::lock_guard<std::mutex> lock(mutex_);
   default_cascade_ = std::move(cascade);
+}
+
+void ModelRouter::SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rate_limiter_ = std::move(rate_limiter);
+  if (default_cascade_) {
+    default_cascade_->SetRateLimiter(rate_limiter_);
+  }
+  for (auto& [_, cascade] : exact_routes_) {
+    if (cascade) cascade->SetRateLimiter(rate_limiter_);
+  }
+  for (auto& [_, cascade] : wildcard_routes_) {
+    if (cascade) cascade->SetRateLimiter(rate_limiter_);
+  }
 }
 
 std::shared_ptr<CascadeRouter> ModelRouter::ResolveCascade(
@@ -143,8 +163,11 @@ bool ModelRouter::DetectCycle(
   return false;
 }
 
-std::shared_ptr<ModelRouter> ModelRouter::CreateFromRegistry(const ProviderRegistry& registry) {
+std::shared_ptr<ModelRouter> ModelRouter::CreateFromRegistry(
+    const ProviderRegistry& registry,
+    std::shared_ptr<DistributedRateLimiter> rate_limiter) {
   auto router = std::make_shared<ModelRouter>();
+  router->SetRateLimiter(rate_limiter);
 
   // Build default cascade: all registered providers in exact configured order
   std::vector<CascadeTarget> default_targets;
@@ -166,7 +189,8 @@ std::shared_ptr<ModelRouter> ModelRouter::CreateFromRegistry(const ProviderRegis
   }
 
   if (!default_targets.empty()) {
-    router->SetDefaultCascade(std::make_shared<CascadeRouter>(default_targets, "default"));
+    router->SetDefaultCascade(
+        std::make_shared<CascadeRouter>(default_targets, "default", rate_limiter));
   }
 
   // Register dedicated routes per provider
@@ -180,7 +204,7 @@ std::shared_ptr<ModelRouter> ModelRouter::CreateFromRegistry(const ProviderRegis
     // Single provider target
     std::vector<CascadeTarget> single_target = {
         CascadeTarget{.client = client, .breaker = breaker, .target_model = "", .priority = 0}};
-    auto prov_cascade = std::make_shared<CascadeRouter>(single_target, prov);
+    auto prov_cascade = std::make_shared<CascadeRouter>(single_target, prov, rate_limiter);
 
     // Register wildcard prefix: <provider>/*
     router->RegisterRoute(prov + "/*", prov_cascade);
