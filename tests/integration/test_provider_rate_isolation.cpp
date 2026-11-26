@@ -378,3 +378,63 @@ TEST_F(ProviderRateIsolationIntegrationTest, ThreeTierConcurrentBurstQuotaFailov
   EXPECT_FALSE(st51.ok());
   EXPECT_EQ(st51.code, StatusCode::RESOURCE_EXHAUSTED);
 }
+
+TEST_F(ProviderRateIsolationIntegrationTest, CatalogExclusivePipelineZeroPhantomVendors) {
+  TelemetryRegistry::Instance().Reset();
+  EXPECT_FALSE(rate_limiter_->HasRules("groq"));
+  EXPECT_FALSE(rate_limiter_->HasRules("openrouter"));
+  EXPECT_TRUE(TelemetryRegistry::Instance().GetTrackedProviders().empty());
+
+  ProviderRegistry registry;
+  registry.SetRateLimiter(rate_limiter_);
+  registry.SetClientFactory([](const ProviderConfig& cfg) {
+    return std::make_shared<MockUpstreamClient>(cfg.name, cfg.default_model, cfg.endpoint);
+  });
+
+  ProviderConfig ollama;
+  ollama.name = "ollama";
+  ollama.endpoint = "http://localhost:11434/v1/chat/completions";
+  ollama.default_model = "llama3.2";
+  ollama.rate_limits.push_back(RateLimitRule{
+      .provider = "ollama",
+      .window_name = "minute",
+      .capacity = 5.0,
+      .refill_rate_per_sec = 5.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  ASSERT_TRUE(registry.RegisterProvider(ollama));
+
+  ProviderConfig vllm;
+  vllm.name = "vllm";
+  vllm.endpoint = "http://localhost:8000/v1/chat/completions";
+  vllm.default_model = "qwen2.5-7b";
+  vllm.rate_limits.push_back(RateLimitRule{
+      .provider = "vllm",
+      .window_name = "minute",
+      .capacity = 5.0,
+      .refill_rate_per_sec = 5.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  ASSERT_TRUE(registry.RegisterProvider(vllm));
+
+  auto router = ModelRouter::CreateFromRegistry(registry, rate_limiter_);
+
+  ChatCompletionRequest req;
+  req.model = "llama3.2";
+  req.correlation_id = "catalog-parity-1";
+  req.messages.push_back(ChatMessage{.role = "user", .content = "Catalog parity check"});
+
+  ChatCompletionResponse resp;
+  ASSERT_TRUE(router->Complete(req, &resp).ok());
+
+  auto tracked = TelemetryRegistry::Instance().GetTrackedProviders();
+  EXPECT_EQ(tracked.size(), 2u);
+
+  std::string prom = TelemetryRegistry::Instance().ToPrometheusFormat();
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"ollama\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"vllm\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_requests_total{model=\"llama3.2\",provider=\"ollama\",status=\"200\"} 1"),
+            std::string::npos);
+  EXPECT_EQ(prom.find("provider=\"groq\""), std::string::npos);
+  EXPECT_EQ(prom.find("provider=\"openrouter\""), std::string::npos);
+}

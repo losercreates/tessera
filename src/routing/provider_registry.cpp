@@ -135,7 +135,8 @@ bool ProviderRegistry::RegisterProvider(const ProviderConfig& config, std::strin
       breaker = std::make_shared<CircuitBreaker>(config.circuit_config);
     }
 
-    if (providers_.find(lower_name) == providers_.end()) {
+    bool updating_existing = (providers_.find(lower_name) != providers_.end());
+    if (!updating_existing) {
       provider_order_.push_back(lower_name);
     }
 
@@ -146,6 +147,9 @@ bool ProviderRegistry::RegisterProvider(const ProviderConfig& config, std::strin
     };
 
     if (rate_limiter_) {
+      if (updating_existing) {
+        rate_limiter_->ClearRules(lower_name);
+      }
       for (const auto& rule : config.rate_limits) {
         rate_limiter_->AddRule(rule);
       }
@@ -253,8 +257,13 @@ ProviderConfig ProviderRegistry::DefaultOpenRouterConfig() {
   return cfg;
 }
 
-ProviderRegistry ProviderRegistry::LoadFromEnvironment(bool preseed_defaults) {
+ProviderRegistry ProviderRegistry::LoadFromEnvironment(
+    bool preseed_defaults,
+    ClientFactory custom_client_factory) {
   ProviderRegistry registry;
+  if (custom_client_factory) {
+    registry.SetClientFactory(std::move(custom_client_factory));
+  }
 
   // 1. Scan for numbered/indexed providers: PROVIDER_1_NAME, PROVIDER_2_NAME, ... PROVIDER_N_NAME
   bool found_indexed = false;

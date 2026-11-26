@@ -32,6 +32,7 @@ class ModelRouter : public ICompletionBackend {
   void RegisterRoute(std::string pattern, std::shared_ptr<CascadeRouter> cascade);
   void RegisterRoute(std::string pattern, std::vector<CascadeTarget> targets);
   void SetDefaultCascade(std::shared_ptr<CascadeRouter> cascade);
+  [[nodiscard]] std::shared_ptr<CascadeRouter> GetDefaultCascade() const;
   void SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter);
 
   /**

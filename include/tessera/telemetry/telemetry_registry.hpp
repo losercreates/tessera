@@ -32,6 +32,9 @@ class TelemetryRegistry {
   // Dynamically registers an upstream provider for gauge and histogram tracking
   void RegisterProvider(std::string_view provider);
 
+  // Explicit opt-in helper for standalone unit tests expecting preset providers
+  void RegisterStandardProviders();
+
   // Serializes all captured metrics into standard Prometheus text format
   [[nodiscard]] std::string ToPrometheusFormat() const;
 

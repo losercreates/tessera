@@ -2,6 +2,7 @@
 #include "tessera/routing/provider_registry.hpp"
 #include "tessera/routing/model_router.hpp"
 #include "tessera/backend/mock_upstream_client.hpp"
+#include "tessera/ratelimit/rate_limiter.hpp"
 #include "tessera/telemetry/telemetry_registry.hpp"
 #include <cstdlib>
 
@@ -285,4 +286,90 @@ TEST_F(ProviderRegistryTest, LoadFromIndexedEnvironmentVariables) {
   unsetenv("PROVIDER_3_KEY");
   unsetenv("PROVIDER_3_MODEL");
   unsetenv("PROVIDER_3_RPM");
+}
+
+TEST_F(ProviderRegistryTest, CatalogExclusiveRateLimiterAndTelemetryParity) {
+  auto mock_redis = std::make_shared<MockRedisClient>();
+  RedisPoolConfig pool_cfg;
+  auto redis_pool = std::make_shared<RedisConnectionPool>(pool_cfg, mock_redis);
+  auto limiter = std::make_shared<DistributedRateLimiter>(redis_pool);
+
+  EXPECT_FALSE(limiter->HasRules("groq"));
+  EXPECT_FALSE(limiter->HasRules("openrouter"));
+  EXPECT_TRUE(TelemetryRegistry::Instance().GetTrackedProviders().empty());
+
+  ProviderRegistry registry;
+  registry.SetRateLimiter(limiter);
+  registry.SetClientFactory([](const ProviderConfig& cfg) {
+    return std::make_shared<MockUpstreamClient>(cfg.name, cfg.default_model, cfg.endpoint);
+  });
+
+  ProviderConfig ollama;
+  ollama.name = "ollama";
+  ollama.endpoint = "http://localhost:11434/v1/chat/completions";
+  ollama.default_model = "llama3.2";
+  ollama.rate_limits.push_back(RateLimitRule{
+      .provider = "ollama",
+      .window_name = "minute",
+      .capacity = 12.0,
+      .refill_rate_per_sec = 12.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  ASSERT_TRUE(registry.RegisterProvider(ollama));
+
+  ProviderConfig deepseek;
+  deepseek.name = "deepseek";
+  deepseek.endpoint = "https://api.deepseek.com/v1/chat/completions";
+  deepseek.default_model = "deepseek-chat";
+  deepseek.rate_limits.push_back(RateLimitRule{
+      .provider = "deepseek",
+      .window_name = "minute",
+      .capacity = 60.0,
+      .refill_rate_per_sec = 60.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  ASSERT_TRUE(registry.RegisterProvider(deepseek));
+
+  // Verify idempotent rule attachment on repeated registration / re-registration
+  registry.RegisterRateLimits(*limiter);
+  EXPECT_EQ(limiter->GetRules("ollama").size(), 1u);
+  EXPECT_EQ(limiter->GetRules("deepseek").size(), 1u);
+
+  ollama.rate_limits[0].capacity = 24.0;
+  ASSERT_TRUE(registry.RegisterProvider(ollama));
+  ASSERT_EQ(limiter->GetRules("ollama").size(), 1u);
+  EXPECT_EQ(limiter->GetRules("ollama")[0].capacity, 24.0);
+
+  EXPECT_FALSE(limiter->HasRules("groq"));
+  EXPECT_FALSE(limiter->HasRules("openrouter"));
+
+  auto tracked = TelemetryRegistry::Instance().GetTrackedProviders();
+  EXPECT_EQ(tracked.size(), 2u);
+  std::string prom = TelemetryRegistry::Instance().ToPrometheusFormat();
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"ollama\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"deepseek\"} 0"), std::string::npos);
+  EXPECT_EQ(prom.find("provider=\"groq\""), std::string::npos);
+  EXPECT_EQ(prom.find("provider=\"openrouter\""), std::string::npos);
+}
+
+TEST_F(ProviderRegistryTest, LoadFromEnvironmentCustomClientFactory) {
+  setenv("TESSERA_PROVIDERS", "ollama,deepseek", 1);
+
+  size_t factory_invocations = 0;
+  auto registry = ProviderRegistry::LoadFromEnvironment(
+      false,
+      [&factory_invocations](const ProviderConfig& cfg) {
+        factory_invocations++;
+        return std::make_shared<MockUpstreamClient>(cfg.name, cfg.default_model, cfg.endpoint);
+      });
+
+  EXPECT_EQ(factory_invocations, 2u);
+  EXPECT_EQ(registry.ProviderCount(), 2u);
+  EXPECT_NE(std::dynamic_pointer_cast<MockUpstreamClient>(registry.GetProviderClient("ollama")), nullptr);
+  EXPECT_NE(std::dynamic_pointer_cast<MockUpstreamClient>(registry.GetProviderClient("deepseek")), nullptr);
+
+  auto tracked = TelemetryRegistry::Instance().GetTrackedProviders();
+  EXPECT_EQ(tracked.size(), 2u);
+
+  unsetenv("TESSERA_PROVIDERS");
 }

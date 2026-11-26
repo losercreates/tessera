@@ -24,6 +24,10 @@ class RateLimiterTest : public ::testing::Test {
 };
 
 TEST_F(RateLimiterTest, InitialQuotaPermitsRequests) {
+  rate_limiter_->LoadStandardPolicies();
+  EXPECT_TRUE(rate_limiter_->HasRules("groq"));
+  EXPECT_TRUE(rate_limiter_->HasRules("openrouter"));
+
   // Groq allows 30 RPM
   auto res = rate_limiter_->CheckAndConsume("groq", 1.0);
   EXPECT_TRUE(res.allowed);
@@ -32,6 +36,8 @@ TEST_F(RateLimiterTest, InitialQuotaPermitsRequests) {
 }
 
 TEST_F(RateLimiterTest, DepletionRejectsSubsequentRequests) {
+  rate_limiter_->LoadStandardPolicies();
+
   // Consume all 30 tokens for groq minute window
   for (int i = 0; i < 30; ++i) {
     auto res = rate_limiter_->CheckAndConsume("groq", 1.0);
@@ -46,6 +52,8 @@ TEST_F(RateLimiterTest, DepletionRejectsSubsequentRequests) {
 }
 
 TEST_F(RateLimiterTest, ProviderQuotasAreIsolated) {
+  rate_limiter_->LoadStandardPolicies();
+
   // Exhaust OpenRouter quota (20 RPM)
   for (int i = 0; i < 20; ++i) {
     auto res = rate_limiter_->CheckAndConsume("openrouter", 1.0);
@@ -63,6 +71,8 @@ TEST_F(RateLimiterTest, ProviderQuotasAreIsolated) {
 }
 
 TEST_F(RateLimiterTest, FailOpenWhenRedisDown) {
+  rate_limiter_->LoadStandardPolicies();
+
   mock_redis_->SetSimulateFailure(true);
   mock_redis_->Disconnect();
   redis_pool_->SetHealthy(false);
@@ -73,6 +83,8 @@ TEST_F(RateLimiterTest, FailOpenWhenRedisDown) {
 }
 
 TEST_F(RateLimiterTest, RateLimitedBackendEnforcesLimit) {
+  rate_limiter_->LoadStandardPolicies();
+
   auto inner = std::make_shared<MockEchoBackend>();
   auto rate_limited_backend = std::make_shared<RateLimitedBackend>(inner, rate_limiter_, "groq");
 
@@ -124,5 +136,33 @@ TEST_F(RateLimiterTest, CustomProviderResolverOverride) {
   ChatCompletionResponse resp;
   Status st = backend.Complete(req, &resp);
   EXPECT_TRUE(st.ok());
+}
+
+TEST_F(RateLimiterTest, ZeroPreseedInitializationAndUnconstrainedPassThrough) {
+  auto shared_state = mock_redis_->GetSharedState();
+  EXPECT_FALSE(rate_limiter_->HasRules("groq"));
+  EXPECT_FALSE(rate_limiter_->HasRules("openrouter"));
+  EXPECT_TRUE(rate_limiter_->GetRules("groq").empty());
+  EXPECT_TRUE(rate_limiter_->GetRules("openrouter").empty());
+
+  auto res_groq = rate_limiter_->CheckAndConsume("groq", 1.0);
+  auto res_custom = rate_limiter_->CheckAndConsume("unconfigured_provider", 1.0);
+  EXPECT_TRUE(res_groq.allowed);
+  EXPECT_TRUE(res_custom.allowed);
+  EXPECT_EQ(shared_state->lua_eval_count.load(), 0u);
+
+  rate_limiter_->AddRule(RateLimitRule{
+      .provider = "ephemeral",
+      .window_name = "minute",
+      .capacity = 5.0,
+      .refill_rate_per_sec = 5.0 / 60.0,
+      .ttl_seconds = 60,
+  });
+  EXPECT_TRUE(rate_limiter_->HasRules("ephemeral"));
+
+  rate_limiter_->ClearAllRules();
+  EXPECT_FALSE(rate_limiter_->HasRules("ephemeral"));
+  EXPECT_FALSE(rate_limiter_->HasRules("groq"));
+  EXPECT_FALSE(rate_limiter_->HasRules("openrouter"));
 }
 

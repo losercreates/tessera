@@ -8,19 +8,7 @@ TelemetryRegistry& TelemetryRegistry::Instance() {
   return instance;
 }
 
-TelemetryRegistry::TelemetryRegistry() {
-  // Pre-seed known circuit states
-  circuit_gauges_["groq"] = std::make_shared<std::atomic<uint32_t>>(0);
-  circuit_gauges_["openrouter"] = std::make_shared<std::atomic<uint32_t>>(0);
-
-  // Pre-seed latency histograms
-  latency_histograms_["groq"] = std::make_shared<Histogram>();
-  latency_histograms_["openrouter"] = std::make_shared<Histogram>();
-
-  // Pre-seed rate-limit skip counters
-  ratelimit_skips_counters_["groq"] = std::make_shared<std::atomic<uint64_t>>(0);
-  ratelimit_skips_counters_["openrouter"] = std::make_shared<std::atomic<uint64_t>>(0);
-}
+TelemetryRegistry::TelemetryRegistry() = default;
 
 void TelemetryRegistry::IncrementRequestsTotal(
     std::string_view model,
@@ -104,6 +92,11 @@ void TelemetryRegistry::RegisterProvider(std::string_view provider) {
   if (ratelimit_skips_counters_.find(prov) == ratelimit_skips_counters_.end()) {
     ratelimit_skips_counters_[prov] = std::make_shared<std::atomic<uint64_t>>(0);
   }
+}
+
+void TelemetryRegistry::RegisterStandardProviders() {
+  RegisterProvider("groq");
+  RegisterProvider("openrouter");
 }
 
 void TelemetryRegistry::IncrementRateLimitSkipsTotal(std::string_view provider) {
@@ -267,12 +260,7 @@ void TelemetryRegistry::Reset() {
   cache_misses_.store(0, std::memory_order_relaxed);
 
   circuit_gauges_.clear();
-  circuit_gauges_["groq"] = std::make_shared<std::atomic<uint32_t>>(0);
-  circuit_gauges_["openrouter"] = std::make_shared<std::atomic<uint32_t>>(0);
-
   latency_histograms_.clear();
-  latency_histograms_["groq"] = std::make_shared<Histogram>();
-  latency_histograms_["openrouter"] = std::make_shared<Histogram>();
 }
 
 }  // namespace tessera

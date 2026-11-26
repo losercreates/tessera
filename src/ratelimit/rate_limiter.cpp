@@ -3,9 +3,13 @@
 
 namespace tessera {
 
-DistributedRateLimiter::DistributedRateLimiter(std::shared_ptr<RedisConnectionPool> redis_pool)
+DistributedRateLimiter::DistributedRateLimiter(
+    std::shared_ptr<RedisConnectionPool> redis_pool,
+    bool load_standard_policies)
     : redis_pool_(std::move(redis_pool)) {
-  LoadStandardPolicies();
+  if (load_standard_policies) {
+    LoadStandardPolicies();
+  }
 }
 
 void DistributedRateLimiter::AddRule(RateLimitRule rule) {

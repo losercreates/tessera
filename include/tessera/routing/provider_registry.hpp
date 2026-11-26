@@ -69,7 +69,9 @@ class ProviderRegistry {
   /**
    * Configuration Loaders
    */
-  static ProviderRegistry LoadFromEnvironment(bool preseed_defaults = true);
+  static ProviderRegistry LoadFromEnvironment(
+      bool preseed_defaults = true,
+      ClientFactory custom_client_factory = nullptr);
   static ProviderRegistry LoadFromJson(std::string_view json_str);
 
   /**

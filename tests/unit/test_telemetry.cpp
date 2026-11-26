@@ -111,7 +111,7 @@ TEST_F(TelemetryTest, DynamicMultiProviderRegistrationAndExposition) {
   registry.RegisterProvider("mistral");
 
   auto tracked = registry.GetTrackedProviders();
-  EXPECT_GE(tracked.size(), 5u); // groq, openrouter, ollama, deepseek, mistral
+  EXPECT_EQ(tracked.size(), 3u); // ollama, deepseek, mistral only (zero phantom groq/openrouter)
 
   // Record operational telemetry across the dynamic backends
   registry.IncrementRequestsTotal("llama3.2", "ollama", "200");
@@ -142,6 +142,8 @@ TEST_F(TelemetryTest, DynamicMultiProviderRegistrationAndExposition) {
 
   // Validate Prometheus exposition text
   std::string prom = registry.ToPrometheusFormat();
+  EXPECT_EQ(prom.find("provider=\"groq\""), std::string::npos);
+  EXPECT_EQ(prom.find("provider=\"openrouter\""), std::string::npos);
 
   // Counters
   EXPECT_NE(prom.find("gateway_requests_total{model=\"llama3.2\",provider=\"ollama\",status=\"200\"} 2"), std::string::npos);
@@ -187,6 +189,62 @@ TEST_F(TelemetryTest, RateLimitSkipsCounterIsolatedFromLatencyAndReset) {
   // Reset must clear dynamic rate limit skip counters cleanly
   registry.Reset();
   EXPECT_EQ(registry.GetRateLimitSkipsTotal("primary_p"), 0u);
+}
+
+TEST_F(TelemetryTest, ZeroPreseedResetNonMutatingReadsAndLazyWrites) {
+  auto& registry = TelemetryRegistry::Instance();
+
+  // Empty immediately after Reset()
+  EXPECT_TRUE(registry.GetTrackedProviders().empty());
+  std::string empty_prom = registry.ToPrometheusFormat();
+  EXPECT_NE(empty_prom.find("# HELP gateway_requests_total"), std::string::npos);
+  EXPECT_NE(empty_prom.find("# HELP circuit_breaker_state"), std::string::npos);
+  EXPECT_NE(empty_prom.find("# HELP upstream_latency_ms"), std::string::npos);
+  EXPECT_NE(empty_prom.find("# HELP gateway_ratelimit_skips_total"), std::string::npos);
+  EXPECT_EQ(empty_prom.find("provider=\"groq\""), std::string::npos);
+  EXPECT_EQ(empty_prom.find("provider=\"openrouter\""), std::string::npos);
+
+  // Non-mutating reads on unknown providers return safe zero/closed defaults without creating series
+  EXPECT_EQ(registry.GetCircuitBreakerState("unconfigured_prov"), 0u);
+  EXPECT_EQ(registry.GetRequestsTotal("m", "unconfigured_prov", "200"), 0u);
+  EXPECT_EQ(registry.GetRateLimitSkipsTotal("unconfigured_prov"), 0u);
+  EXPECT_EQ(registry.GetUpstreamLatencySnapshot("unconfigured_prov").total_count, 0u);
+  EXPECT_TRUE(registry.GetTrackedProviders().empty());
+  EXPECT_EQ(registry.ToPrometheusFormat().find("unconfigured_prov"), std::string::npos);
+
+  // Active write lazily initializes tracked metrics for the active provider only
+  registry.RecordUpstreamLatency("active_prov", 12.0);
+  registry.SetCircuitBreakerState("active_prov", CircuitState::OPEN);
+  auto tracked = registry.GetTrackedProviders();
+  ASSERT_EQ(tracked.size(), 1u);
+  EXPECT_EQ(tracked[0], "active_prov");
+
+  registry.Reset();
+  EXPECT_TRUE(registry.GetTrackedProviders().empty());
+  std::string reset_prom = registry.ToPrometheusFormat();
+  EXPECT_EQ(reset_prom.find("provider=\"groq\""), std::string::npos);
+  EXPECT_EQ(reset_prom.find("provider=\"openrouter\""), std::string::npos);
+  EXPECT_EQ(reset_prom.find("active_prov"), std::string::npos);
+}
+
+TEST_F(TelemetryTest, RegisterStandardProvidersOptInHelper) {
+  auto& registry = TelemetryRegistry::Instance();
+  EXPECT_TRUE(registry.GetTrackedProviders().empty());
+
+  registry.RegisterStandardProviders();
+  auto tracked = registry.GetTrackedProviders();
+  EXPECT_EQ(tracked.size(), 2u);
+  EXPECT_EQ(registry.GetCircuitBreakerState("groq"), 0u);
+  EXPECT_EQ(registry.GetCircuitBreakerState("openrouter"), 0u);
+
+  std::string prom = registry.ToPrometheusFormat();
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"groq\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("circuit_breaker_state{provider=\"openrouter\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_ratelimit_skips_total{provider=\"groq\"} 0"), std::string::npos);
+  EXPECT_NE(prom.find("gateway_ratelimit_skips_total{provider=\"openrouter\"} 0"), std::string::npos);
+
+  registry.Reset();
+  EXPECT_TRUE(registry.GetTrackedProviders().empty());
 }
 
 }  // namespace tessera

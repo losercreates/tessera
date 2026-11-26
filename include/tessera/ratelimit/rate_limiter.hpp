@@ -9,7 +9,9 @@ namespace tessera {
 
 class DistributedRateLimiter {
  public:
-  explicit DistributedRateLimiter(std::shared_ptr<RedisConnectionPool> redis_pool);
+  explicit DistributedRateLimiter(
+      std::shared_ptr<RedisConnectionPool> redis_pool,
+      bool load_standard_policies = false);
 
   // Add rule policies for a provider
   void AddRule(RateLimitRule rule);

@@ -14,6 +14,7 @@ TEST(RateLimitConcurrencyTest, ExactQuotaUnder200Threads) {
   config.max_connections = 32;
   auto pool = std::make_shared<RedisConnectionPool>(config, mock_redis);
   auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+  limiter->LoadStandardPolicies();
 
   constexpr size_t kNumThreads = 200;
   // Groq allows exactly 30 RPM
@@ -55,6 +56,7 @@ TEST(RateLimitConcurrencyTest, MultiProviderConcurrencyUnder200Threads) {
   config.max_connections = 32;
   auto pool = std::make_shared<RedisConnectionPool>(config, mock_redis);
   auto limiter = std::make_shared<DistributedRateLimiter>(pool);
+  limiter->LoadStandardPolicies();
 
   constexpr size_t kNumThreads = 200;
   // 100 threads for Groq (capacity 30), 100 threads for OpenRouter (capacity 20)

@@ -1,9 +1,8 @@
 #include "tessera/server/gateway_server.hpp"
-#include "tessera/backend/mock_backend.hpp"
 #include "tessera/backend/upstream_client.hpp"
 #include "tessera/backend/mock_upstream_client.hpp"
-#include "tessera/routing/circuit_breaker.hpp"
-#include "tessera/routing/failover_router.hpp"
+#include "tessera/routing/provider_registry.hpp"
+#include "tessera/routing/model_router.hpp"
 #include "tessera/cache/cached_backend.hpp"
 #include "tessera/cache/exact_cache.hpp"
 #include "tessera/cache/semantic_cache.hpp"
@@ -11,32 +10,28 @@
 #include "tessera/cache/onnx_embedding.hpp"
 #include "tessera/cache/vector_store.hpp"
 #include "tessera/cache/redis_pool.hpp"
-#include "tessera/ratelimit/rate_limited_backend.hpp"
 #include "tessera/ratelimit/rate_limiter.hpp"
 #include "tessera/telemetry/telemetry_registry.hpp"
 #include "tessera/common/logger.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
 int main(int argc, char** argv) {
   bool check_health = false;
   bool show_metrics = false;
-  std::string user_msg = "Hello, gateway!";
-  std::string model = "llama-3.1-8b-instant";
-  std::string fallback_model = "openrouter/free";
+  bool failover_demo = false;
+  bool live_mode = false;
   bool no_cache = false;
+  bool model_explicit = false;
+  std::string user_msg = "Hello, gateway!";
+  std::string model;
   std::string redis_host = "127.0.0.1";
   uint16_t redis_port = 6379;
   uint32_t cache_ttl = 86400;
   float similarity_threshold = 0.95f;
-  bool failover_demo = false;
   std::string groq_key;
   std::string openrouter_key;
-
-  if (const char* k = std::getenv("GROQ_API_KEY")) groq_key = k;
-  if (const char* k = std::getenv("OPENROUTER_API_KEY")) openrouter_key = k;
-  if (const char* m = std::getenv("GROQ_MODEL")) model = m;
-  if (const char* fm = std::getenv("OPENROUTER_MODEL")) fallback_model = fm;
 
   // Initialize defaults from environment variables if present
   if (const char* env_host = std::getenv("REDIS_HOST")) {
@@ -60,12 +55,15 @@ int main(int argc, char** argv) {
       show_metrics = true;
     } else if (arg == "--failover-demo") {
       failover_demo = true;
+    } else if (arg == "--live") {
+      live_mode = true;
     } else if (arg.rfind("--message=", 0) == 0) {
       user_msg = arg.substr(10);
     } else if (arg == "--message" && i + 1 < argc) {
       user_msg = argv[++i];
     } else if (arg.rfind("--model=", 0) == 0) {
       model = arg.substr(8);
+      model_explicit = true;
     } else if (arg == "--no-cache" || arg == "--no_cache") {
       no_cache = true;
     } else if (arg.rfind("--groq-key=", 0) == 0) {
@@ -83,6 +81,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (!groq_key.empty()) {
+    setenv("GROQ_API_KEY", groq_key.c_str(), 1);
+  }
+  if (!openrouter_key.empty()) {
+    setenv("OPENROUTER_API_KEY", openrouter_key.c_str(), 1);
+  }
+
   tessera::ServerConfig config;
   tessera::RedisPoolConfig pool_config;
   pool_config.host = redis_host;
@@ -98,60 +103,38 @@ int main(int argc, char** argv) {
       embedding_engine, vector_store, similarity_threshold, cache_ttl);
   auto two_tier_cache = std::make_shared<tessera::TwoTierCacheService>(exact_cache, semantic_cache);
 
-  tessera::CircuitBreakerConfig groq_breaker_cfg;
-  groq_breaker_cfg.consecutive_failure_threshold = 3;
-  groq_breaker_cfg.base_cooldown_ms = 1000;
-  groq_breaker_cfg.max_cooldown_ms = 60000;
-  groq_breaker_cfg.trip_on_429 = true;
-
-  tessera::CircuitBreakerConfig openrouter_breaker_cfg;
-  openrouter_breaker_cfg.consecutive_failure_threshold = 3;
-  openrouter_breaker_cfg.base_cooldown_ms = 1000;
-  openrouter_breaker_cfg.max_cooldown_ms = 60000;
-  openrouter_breaker_cfg.trip_on_429 = true;
-
-  auto groq_breaker = std::make_shared<tessera::CircuitBreaker>(groq_breaker_cfg);
-  auto openrouter_breaker = std::make_shared<tessera::CircuitBreaker>(openrouter_breaker_cfg);
-
-  std::shared_ptr<tessera::IUpstreamClient> groq_client;
-  if (!groq_key.empty() && !failover_demo) {
-    tessera::UpstreamProviderConfig groq_cfg;
-    groq_cfg.name = "groq";
-    groq_cfg.default_model = model;
-    groq_cfg.endpoint = "https://api.groq.com/openai/v1/chat/completions";
-    groq_cfg.api_key = groq_key;
-    groq_client = std::make_shared<tessera::HttpUpstreamClient>(groq_cfg);
-  } else {
-    auto mock_groq = std::make_shared<tessera::MockUpstreamClient>(
-        "groq", model, "https://api.groq.com/openai/v1/chat/completions");
-    mock_groq->SetDefaultResponseText("Groq completion for: " + user_msg);
-    if (failover_demo) {
-      mock_groq->EnqueueStatusCode(429, "Simulated Groq 429 quota exhaustion");
+  auto client_factory = [&](const tessera::ProviderConfig& cfg) -> std::shared_ptr<tessera::IUpstreamClient> {
+    if ((!cfg.api_key.empty() || live_mode) && !failover_demo) {
+      return std::make_shared<tessera::HttpUpstreamClient>(cfg);
     }
-    groq_client = mock_groq;
+    auto mock_client = std::make_shared<tessera::MockUpstreamClient>(
+        cfg.name, cfg.default_model, cfg.endpoint);
+    mock_client->SetDefaultResponseText(cfg.name + " completion for: " + user_msg);
+    return mock_client;
+  };
+
+  auto provider_registry = tessera::ProviderRegistry::LoadFromEnvironment(true, client_factory);
+  const auto registered_providers = provider_registry.GetRegisteredProviders();
+
+  if (failover_demo && !registered_providers.empty()) {
+    auto primary_mock = std::dynamic_pointer_cast<tessera::MockUpstreamClient>(
+        provider_registry.GetProviderClient(registered_providers[0]));
+    if (primary_mock) {
+      primary_mock->EnqueueStatusCode(
+          429, "Simulated " + registered_providers[0] + " 429 quota exhaustion");
+    }
+    if (registered_providers.size() < 2) {
+      TESSERA_LOG_WARN(
+          "Failover demo enabled with only {} configured provider ('{}'); no fallback tier available.",
+          registered_providers.size(), registered_providers[0]);
+    }
   }
 
-  std::shared_ptr<tessera::IUpstreamClient> openrouter_client;
-  if (!openrouter_key.empty()) {
-    tessera::UpstreamProviderConfig openrouter_cfg;
-    openrouter_cfg.name = "openrouter";
-    openrouter_cfg.default_model = fallback_model;
-    openrouter_cfg.endpoint = "https://openrouter.ai/api/v1/chat/completions";
-    openrouter_cfg.api_key = openrouter_key;
-    openrouter_client = std::make_shared<tessera::HttpUpstreamClient>(openrouter_cfg);
-  } else {
-    auto mock_or = std::make_shared<tessera::MockUpstreamClient>(
-        "openrouter", fallback_model, "https://openrouter.ai/api/v1/chat/completions");
-    mock_or->SetDefaultResponseText("OpenRouter fallback completion for: " + user_msg);
-    openrouter_client = mock_or;
-  }
-
-  auto failover_router = std::make_shared<tessera::FailoverRouter>(
-      groq_client, groq_breaker, openrouter_client, openrouter_breaker, fallback_model);
-
-  auto cached_backend = std::make_shared<tessera::CachedCompletionBackend>(failover_router, two_tier_cache);
   auto rate_limiter = std::make_shared<tessera::DistributedRateLimiter>(redis_pool);
-  auto pipeline = std::make_shared<tessera::RateLimitedBackend>(cached_backend, rate_limiter, "groq");
+  provider_registry.RegisterRateLimits(*rate_limiter);
+
+  auto model_router = tessera::ModelRouter::CreateFromRegistry(provider_registry, rate_limiter);
+  auto pipeline = std::make_shared<tessera::CachedCompletionBackend>(model_router, two_tier_cache);
 
   tessera::GatewayServer server(config, pipeline);
   server.Start();
@@ -161,6 +144,17 @@ int main(int argc, char** argv) {
     std::cout << "Health Check: " << tessera::HealthStatusToString(status) << "\n";
     server.Stop();
     return status == tessera::HealthStatus::SERVING ? 0 : 1;
+  }
+
+  if (!model_explicit) {
+    if (failover_demo && registered_providers.size() >= 2) {
+      model = "auto";
+    } else if (!registered_providers.empty()) {
+      const auto* first_cfg = provider_registry.GetProviderConfig(registered_providers[0]);
+      model = (first_cfg && !first_cfg->default_model.empty()) ? first_cfg->default_model : "auto";
+    } else {
+      model = "auto";
+    }
   }
 
   tessera::ChatCompletionRequest req;
@@ -179,11 +173,28 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  bool any_live = false;
+  if (!failover_demo) {
+    for (const auto& prov : registered_providers) {
+      const auto* pcfg = provider_registry.GetProviderConfig(prov);
+      if (pcfg && (!pcfg->api_key.empty() || live_mode)) {
+        any_live = true;
+        break;
+      }
+    }
+  }
+
   std::cout << "\n--- ChatCompletion Response ---\n";
   std::cout << "ID:             " << resp.id << "\n";
   std::cout << "Model:          " << resp.model << "\n";
   std::cout << "Correlation ID: " << resp.correlation_id << "\n";
-  std::cout << "Upstream Mode:  " << (!groq_key.empty() ? "LIVE HTTPS (Real Groq API)" : "MOCK (Offline simulated)") << "\n";
+  std::cout << "Upstream Mode:  " << (any_live ? "LIVE HTTP (Configured endpoints)" : "MOCK (Offline simulated)") << "\n";
+  std::cout << "Providers:      [";
+  for (size_t i = 0; i < registered_providers.size(); ++i) {
+    std::cout << registered_providers[i];
+    if (i + 1 < registered_providers.size()) std::cout << ", ";
+  }
+  std::cout << "]\n";
   std::cout << "Cache Hit:      " << (resp.cache_hit ? "true" : "false") << "\n";
   if (!resp.cache_tier.empty()) {
     std::cout << "Cache Tier:     " << resp.cache_tier << "\n";
@@ -196,10 +207,24 @@ int main(int argc, char** argv) {
   std::cout << "Prompt Tokens:  " << resp.usage.prompt_tokens << "\n";
   std::cout << "Compl Tokens:   " << resp.usage.completion_tokens << "\n";
   std::cout << "Total Tokens:   " << resp.usage.total_tokens << "\n";
-  auto rstats = failover_router->GetStats();
-  std::cout << "Primary Calls:  " << rstats.primary_attempts << " (success=" << rstats.primary_successes << ")\n";
-  std::cout << "Failover Calls: " << rstats.failover_attempts << " (direct=" << rstats.direct_fallback_routes << ")\n";
-  std::cout << "Groq Circuit:   " << tessera::ToString(groq_breaker->GetState()) << "\n";
+  std::string remapped_dummy;
+  auto active_cascade = model_router->ResolveCascade(req.model, &remapped_dummy);
+  if (!active_cascade) {
+    active_cascade = model_router->GetDefaultCascade();
+  }
+  if (active_cascade) {
+    auto cstats = active_cascade->GetStats();
+    std::cout << "Cascade Stats:  route=" << active_cascade->RouteId()
+              << ", success=" << cstats.successful_requests
+              << ", failovers=" << cstats.failover_attempts
+              << ", direct_bypasses=" << cstats.direct_bypasses
+              << ", rate_limit_skips=" << cstats.rate_limit_skips << "\n";
+  }
+  for (const auto& prov : registered_providers) {
+    if (auto breaker = provider_registry.GetProviderBreaker(prov)) {
+      std::cout << "Circuit [" << prov << "]: " << tessera::ToString(breaker->GetState()) << "\n";
+    }
+  }
   std::cout << "---------------------------------\n";
 
   if (show_metrics) {

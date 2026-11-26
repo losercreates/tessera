@@ -16,6 +16,7 @@ class RedisResilienceTest : public ::testing::Test {
     pool_ = std::make_shared<RedisConnectionPool>(config, mock_redis_);
     cache_service_ = std::make_shared<ExactCacheService>(pool_);
     limiter_ = std::make_shared<DistributedRateLimiter>(pool_);
+    limiter_->LoadStandardPolicies();
     inner_backend_ = std::make_shared<MockEchoBackend>();
 
     // Layer stack: RateLimitedBackend -> CachedCompletionBackend -> MockEchoBackend

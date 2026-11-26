@@ -39,6 +39,11 @@ void ModelRouter::SetDefaultCascade(std::shared_ptr<CascadeRouter> cascade) {
   default_cascade_ = std::move(cascade);
 }
 
+std::shared_ptr<CascadeRouter> ModelRouter::GetDefaultCascade() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return default_cascade_;
+}
+
 void ModelRouter::SetRateLimiter(std::shared_ptr<DistributedRateLimiter> rate_limiter) {
   std::lock_guard<std::mutex> lock(mutex_);
   rate_limiter_ = std::move(rate_limiter);
