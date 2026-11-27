@@ -44,8 +44,12 @@ set(CORE_SOURCES
   src/common/types.cpp
   src/common/logger.cpp
   src/common/correlation.cpp
+  src/common/json.cpp
   src/backend/mock_backend.cpp
   src/server/call_data.cpp
+  src/server/http_server.cpp
+  src/server/rpc_server.cpp
+  src/server/rpc_client.cpp
   src/server/gateway_server.cpp
   src/server/health_service.cpp
   src/cache/sha256.cpp
@@ -155,6 +159,7 @@ if(BUILD_TESTS)
     tests/unit/test_cascade_router.cpp
     tests/unit/test_model_router.cpp
     tests/unit/test_cache_first_cascade.cpp
+    tests/unit/test_json.cpp
   )
   target_link_libraries(unit_tests PRIVATE tessera_core)
   if(GTest_FOUND)
@@ -177,6 +182,7 @@ if(BUILD_TESTS)
     tests/integration/test_multi_provider_cascade.cpp
     tests/integration/test_provider_rate_isolation.cpp
     tests/integration/test_eval_integration.cpp
+    tests/integration/test_live_ingress.cpp
   )
   target_link_libraries(integration_tests PRIVATE tessera_core)
   if(GTest_FOUND)

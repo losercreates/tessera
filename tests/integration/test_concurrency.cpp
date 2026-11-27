@@ -11,6 +11,9 @@ using namespace tessera;
 
 TEST(ConcurrencyIntegrationTest, Handles500ConcurrentRequests) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   config.worker_threads = 4;
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);

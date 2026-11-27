@@ -7,6 +7,9 @@ using namespace tessera;
 
 TEST(ValidationIntegrationTest, RejectsInvalidRequestsInSubMillisecond) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);
   ASSERT_TRUE(server.Start());
@@ -45,6 +48,9 @@ TEST(ValidationIntegrationTest, RejectsInvalidRequestsInSubMillisecond) {
 
 TEST(ValidationIntegrationTest, EnforcesMaxPayloadSizeLimit) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   config.max_message_size = 1024;  // 1KB limit for this test
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);

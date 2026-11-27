@@ -19,6 +19,7 @@ message ChatCompletionRequest {
   optional uint32 max_tokens = 4;           // Max generated tokens
   bool stream = 5;                          // Unary vs streaming mode
   string correlation_id = 6;                // Distributed tracing correlation ID
+  bool no_cache = 7;                        // Bypass cache lookup on read
 }
 
 // An individual completion choice.
@@ -43,6 +44,8 @@ message ChatCompletionResponse {
   repeated Choice choices = 4;              // Generated completions
   Usage usage = 5;                          // Token usage summary
   string correlation_id = 6;                // Correlated request ID
+  bool cache_hit = 7;                       // Served from exact or semantic cache
+  string cache_tier = 8;                    // Cache tier ("exact" or "semantic")
 }
 
 // Health check request.

@@ -19,9 +19,9 @@
 
 **Purpose**: Register new modular source/test targets and extend shared config and Protobuf wire schemas.
 
-- [ ] T001 Register `src/common/json.cpp`, `src/server/http_server.cpp`, `src/server/rpc_server.cpp`, `src/server/rpc_client.cpp`, `tests/unit/test_json.cpp`, and `tests/integration/test_live_ingress.cpp` in `CMakeLists.txt`
-- [ ] T002 [P] Extend `protos/gateway.proto` with backward-compatible proto3 fields `bool no_cache = 7;` on `ChatCompletionRequest` and `bool cache_hit = 7; string cache_tier = 8;` on `ChatCompletionResponse` in `protos/gateway.proto`
-- [ ] T003 [P] Extend `ServerConfig` with `http_port{8080}`, `metrics_port{9090}`, `enable_rpc_listener{true}`, `enable_http_listener{true}`, and `enable_metrics_listener{true}` (keeping `port{50051}`, `max_message_size{4 * 1024 * 1024}`, and `graceful_drain_timeout_ms{5000}`) in `include/tessera/server/server_config.hpp`
+- [x] T001 Register `src/common/json.cpp`, `src/server/http_server.cpp`, `src/server/rpc_server.cpp`, `src/server/rpc_client.cpp`, `tests/unit/test_json.cpp`, and `tests/integration/test_live_ingress.cpp` in `CMakeLists.txt`
+- [x] T002 [P] Extend `protos/gateway.proto` with backward-compatible proto3 fields `bool no_cache = 7;` on `ChatCompletionRequest` and `bool cache_hit = 7; string cache_tier = 8;` on `ChatCompletionResponse` in `protos/gateway.proto`
+- [x] T003 [P] Extend `ServerConfig` with `http_port{8080}`, `metrics_port{9090}`, `enable_rpc_listener{true}`, `enable_http_listener{true}`, and `enable_metrics_listener{true}` (keeping `port{50051}`, `max_message_size{4 * 1024 * 1024}`, and `graceful_drain_timeout_ms{5000}`) in `include/tessera/server/server_config.hpp`
 
 ---
 
@@ -31,10 +31,10 @@
 
 **⚠️ CRITICAL**: Complete this phase before `US1`–`US4` implementation and network integration tests.
 
-- [ ] T004 [P] Implement depth-bounded recursive-descent `JsonValue` AST, strict parser, escaped serializer, and OpenAI JSON/error conversion helpers (rejecting malformed, truncated, or over-nested payloads) in `include/tessera/common/json.hpp` and `src/common/json.cpp`
-- [ ] T005 Add unit tests verifying JSON object/array parsing, escape decoding/encoding (`\"`, `\\`, `\n`, `\r`, `\t`, `\uXXXX`), nesting-depth/truncation rejection, and OpenAI completion request/response JSON conversions in `tests/unit/test_json.cpp` (depends on T004)
-- [ ] T006 [P] Implement reusable RAII `HttpServer` (`SO_REUSEADDR`, ephemeral `port == 0` -> `BoundPort()`, `poll()` + shutdown self-pipe wakeup, worker thread pool, per-socket timeouts, `max_body_bytes` cap returning `413` before buffering, `MSG_NOSIGNAL` chunked/SSE response streaming writer) in `include/tessera/server/http_server.hpp` and `src/server/http_server.cpp` (depends on T004)
-- [ ] T007 [P] Update existing in-process integration fixtures (`ServerAsyncIntegrationTest`, `GracefulShutdownTest`, `ConcurrencyIntegrationTest`, `ValidationIntegrationTest`) to bind ephemeral listener ports (`port = 0`, `http_port = 0`, `metrics_port = 0`) so parallel `ctest --parallel` runs never encounter bind collisions in `tests/integration/test_server_async.cpp`, `tests/integration/test_graceful_shutdown.cpp`, `tests/integration/test_concurrency.cpp`, and `tests/integration/test_validation_integration.cpp` (depends on T003)
+- [x] T004 [P] Implement depth-bounded recursive-descent `JsonValue` AST, strict parser, escaped serializer, and OpenAI JSON/error conversion helpers (rejecting malformed, truncated, or over-nested payloads) in `include/tessera/common/json.hpp` and `src/common/json.cpp`
+- [x] T005 Add unit tests verifying JSON object/array parsing, escape decoding/encoding (`\"`, `\\`, `\n`, `\r`, `\t`, `\uXXXX`), nesting-depth/truncation rejection, and OpenAI completion request/response JSON conversions in `tests/unit/test_json.cpp` (depends on T004)
+- [x] T006 [P] Implement reusable RAII `HttpServer` (`SO_REUSEADDR`, ephemeral `port == 0` -> `BoundPort()`, `poll()` + shutdown self-pipe wakeup, worker thread pool, per-socket timeouts, `max_body_bytes` cap returning `413` before buffering, `MSG_NOSIGNAL` chunked/SSE response streaming writer) in `include/tessera/server/http_server.hpp` and `src/server/http_server.cpp` (depends on T004)
+- [x] T007 [P] Update existing in-process integration fixtures (`ServerAsyncIntegrationTest`, `GracefulShutdownTest`, `ConcurrencyIntegrationTest`, `ValidationIntegrationTest`) to bind ephemeral listener ports (`port = 0`, `http_port = 0`, `metrics_port = 0`) so parallel `ctest --parallel` runs never encounter bind collisions in `tests/integration/test_server_async.cpp`, `tests/integration/test_graceful_shutdown.cpp`, `tests/integration/test_concurrency.cpp`, and `tests/integration/test_validation_integration.cpp` (depends on T003)
 
 **Checkpoint**: Shared JSON codec, reusable HTTP server primitive, and parallel-safe test ports ready.
 
@@ -48,14 +48,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T008 [US1] Create live loopback network integration test suite file adding remote RPC completion, `--no-cache` propagation, remote health check (`SERVING` while running -> failure after `Stop()`), oversized RPC frame rejection, and connection-refused assertions using ephemeral `BoundPort()` in `tests/integration/test_live_ingress.cpp` (depends on T001, T007)
+- [x] T008 [US1] Create live loopback network integration test suite file adding remote RPC completion, `--no-cache` propagation, remote health check (`SERVING` while running -> failure after `Stop()`), oversized RPC frame rejection, and connection-refused assertions using ephemeral `BoundPort()` in `tests/integration/test_live_ingress.cpp` (depends on T001, T007)
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Implement `RpcServer` supporting `#ifdef TESSERA_HAS_SYSTEM_GRPC` asynchronous `GatewayService::AsyncService` + `ServerCompletionQueue` state machine AND `#else` length-prefixed (`uint32_t` big-endian <= `max_message_size + 65536`) UTF-8 JSON TCP RPC server on `host:port` (supporting ephemeral `port = 0` -> `BoundPort()`, `max_message_size`, and clean stop/unblock) in `include/tessera/server/rpc_server.hpp` and `src/server/rpc_server.cpp` (depends on T002, T003, T004)
-- [ ] T010 [P] [US1] Implement remote `RpcClient` (`GatewayService::NewStub` under `TESSERA_HAS_SYSTEM_GRPC` or framed TCP RPC client otherwise) plus lightweight HTTP/1.1 client helpers for remote `/v1/chat/completions`, SSE `/v1/chat/completions`, `/health`, and `/metrics` calls with connect/read timeouts in `include/tessera/server/rpc_client.hpp` and `src/server/rpc_client.cpp` (depends on T002, T004)
-- [ ] T011 [US1] Wire `RpcServer` into `GatewayServer::Start()`, `Stop()`, and `BoundPort()` with thread-safe `in_flight_requests_` accounting and graceful shutdown draining, removing idle `WorkerLoop` sleeps in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T006, T009)
-- [ ] T012 [US1] Refactor `tools/gateway_client.cpp` into a strictly remote network CLI client dialing running server targets (`GATEWAY_HOST`/`--host` default `127.0.0.1`, `GATEWAY_PORT`/`--port`, `HTTP_PORT`/`--http-port`, `METRICS_PORT`/`--metrics-port`, `--health`, `--metrics`, `--message`, `--model` defaulting to `"auto"` when omitted, `--no-cache`, `--http`, `--stream`, `--timeout-ms`) with zero embedded `GatewayServer` construction and non-zero exit when server is unreachable or `NOT_SERVING` in `tools/gateway_client.cpp` (depends on T010)
+- [x] T009 [P] [US1] Implement `RpcServer` supporting `#ifdef TESSERA_HAS_SYSTEM_GRPC` asynchronous `GatewayService::AsyncService` + `ServerCompletionQueue` state machine AND `#else` length-prefixed (`uint32_t` big-endian <= `max_message_size + 65536`) UTF-8 JSON TCP RPC server on `host:port` (supporting ephemeral `port = 0` -> `BoundPort()`, `max_message_size`, and clean stop/unblock) in `include/tessera/server/rpc_server.hpp` and `src/server/rpc_server.cpp` (depends on T002, T003, T004)
+- [x] T010 [P] [US1] Implement remote `RpcClient` (`GatewayService::NewStub` under `TESSERA_HAS_SYSTEM_GRPC` or framed TCP RPC client otherwise) plus lightweight HTTP/1.1 client helpers for remote `/v1/chat/completions`, SSE `/v1/chat/completions`, `/health`, and `/metrics` calls with connect/read timeouts in `include/tessera/server/rpc_client.hpp` and `src/server/rpc_client.cpp` (depends on T002, T004)
+- [x] T011 [US1] Wire `RpcServer` into `GatewayServer::Start()`, `Stop()`, and `BoundPort()` with thread-safe `in_flight_requests_` accounting and graceful shutdown draining, removing idle `WorkerLoop` sleeps in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T006, T009)
+- [x] T012 [US1] Refactor `tools/gateway_client.cpp` into a strictly remote network CLI client dialing running server targets (`GATEWAY_HOST`/`--host` default `127.0.0.1`, `GATEWAY_PORT`/`--port`, `HTTP_PORT`/`--http-port`, `METRICS_PORT`/`--metrics-port`, `--health`, `--metrics`, `--message`, `--model` defaulting to `"auto"` when omitted, `--no-cache`, `--http`, `--stream`, `--timeout-ms`) with zero embedded `GatewayServer` construction and non-zero exit when server is unreachable or `NOT_SERVING` in `tools/gateway_client.cpp` (depends on T010)
 
 **Checkpoint**: User Story 1 (MVP) complete. Real RPC network ingress and true remote CLI dialing work end-to-end.
 
@@ -69,12 +69,12 @@
 
 ### Tests for User Story 2
 
-- [ ] T013 [US2] Add OpenAI HTTP REST & SSE integration tests covering `GET /v1/models`, `POST /v1/chat/completions` non-streaming (`200 OK`, `X-Tessera-Cache-Hit`, `no_cache` + `Cache-Control: no-cache` bypass), progressive SSE streaming (`Content-Type: text/event-stream`, chunk `delta.content` reassembly, `finish_reason: "stop"`, `data: [DONE]`), `400` malformed/missing-field JSON errors, `429` local rate-limit (`Retry-After`), and `503` upstream unavailable mapping in `tests/integration/test_live_ingress.cpp` (depends on T008)
+- [x] T013 [US2] Add OpenAI HTTP REST & SSE integration tests covering `GET /v1/models`, `POST /v1/chat/completions` non-streaming (`200 OK`, `X-Tessera-Cache-Hit`, `no_cache` + `Cache-Control: no-cache` bypass), progressive SSE streaming (`Content-Type: text/event-stream`, chunk `delta.content` reassembly, `finish_reason: "stop"`, `data: [DONE]`), `400` malformed/missing-field JSON errors, `429` local rate-limit (`Retry-After`), and `503` upstream unavailable mapping in `tests/integration/test_live_ingress.cpp` (depends on T008)
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Add `ModelInfo`, `SetModelListProvider()`, `ListModels()` (returning empty `"data": []` list when unset), and `BoundHttpPort()` on `GatewayServer`, and wire the ingress `HttpServer` (`http_port = 8080`, or combined handler when `http_port == metrics_port > 0`) handling `POST /v1/chat/completions` (JSON + progressive chunked SSE emission & OpenAI error status mapping `400`/`413`/`429`/`503`), `GET /v1/models`, and `GET /health` in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T004, T006, T011)
-- [ ] T015 [US2] Update `src/main.cpp` to parse `GATEWAY_HOST`, `HTTP_PORT` (`--http-port=`), `METRICS_PORT` (`--metrics-port=`), and `--mock-upstreams` / `TESSERA_MOCK_UPSTREAMS=1`, wire `ModelRouter::GetRegisteredModels()` into `GatewayServer::SetModelListProvider()`, register `MockUpstreamClient` cleanly when mock upstreams mode is enabled, and log bound RPC, HTTP, and Metrics ports on startup in `src/main.cpp` (depends on T014, T017)
+- [x] T014 [US2] Add `ModelInfo`, `SetModelListProvider()`, `ListModels()` (returning empty `"data": []` list when unset), and `BoundHttpPort()` on `GatewayServer`, and wire the ingress `HttpServer` (`http_port = 8080`, or combined handler when `http_port == metrics_port > 0`) handling `POST /v1/chat/completions` (JSON + progressive chunked SSE emission & OpenAI error status mapping `400`/`413`/`429`/`503`), `GET /v1/models`, and `GET /health` in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T004, T006, T011)
+- [x] T015 [US2] Update `src/main.cpp` to parse `GATEWAY_HOST`, `HTTP_PORT` (`--http-port=`), `METRICS_PORT` (`--metrics-port=`), and `--mock-upstreams` / `TESSERA_MOCK_UPSTREAMS=1`, wire `ModelRouter::GetRegisteredModels()` into `GatewayServer::SetModelListProvider()`, register `MockUpstreamClient` cleanly when mock upstreams mode is enabled, and log bound RPC, HTTP, and Metrics ports on startup in `src/main.cpp` (depends on T014, T017)
 
 **Checkpoint**: User Story 2 complete. Drop-in OpenAI REST + SSE streaming and model discovery run live alongside RPC ingress.
 
@@ -88,13 +88,13 @@
 
 ### Tests for User Story 3
 
-- [ ] T016 [US3] Add live `/metrics` and `/health` HTTP integration tests asserting `GET /metrics` on `BoundMetricsPort()` serves HTTP `200` (`text/plain; version=0.0.4`) with live incremented request/cache/latency/breaker counters, `GET /health` transitions from `200 SERVING` to `503 NOT_SERVING` during drain, and unknown paths return `404`/`405` cleanly in `tests/integration/test_live_ingress.cpp` (depends on T013)
+- [x] T016 [US3] Add live `/metrics` and `/health` HTTP integration tests asserting `GET /metrics` on `BoundMetricsPort()` serves HTTP `200` (`text/plain; version=0.0.4`) with live incremented request/cache/latency/breaker counters, `GET /health` transitions from `200 SERVING` to `503 NOT_SERVING` during drain, and unknown paths return `404`/`405` cleanly in `tests/integration/test_live_ingress.cpp` (depends on T013)
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Wire the dedicated Prometheus `HttpServer` (`metrics_port = 9090`, serving `GET /metrics` from `TelemetryRegistry::Instance().ToPrometheusFormat()` and `GET /health`) and `BoundMetricsPort()` into `GatewayServer::Start()` and `Stop()` in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T014)
-- [ ] T018 [P] [US3] Update environment templates, Dockerfiles, and Compose configuration (`HTTP_PORT=8080`, `EXPOSE 50051 8080 9090`, port mapping `${HTTP_PORT:-8080}:8080`, and `TESSERA_MOCK_UPSTREAMS` pass-through so Compose smoke tests execute cleanly when provider keys are empty) in `.env.example`, `deploy/.env.example`, `Dockerfile`, `deploy/Dockerfile`, and `deploy/docker-compose.yml`
-- [ ] T019 [US3] Refactor `scripts/verify_metrics_format.sh` and update `.github/workflows/ci.yml` (`Verify CLI Tools & Health Check` & Prometheus step in Job 1 launching `gateway_server --mock-redis --mock-upstreams` with `trap` teardown, plus passing `TESSERA_MOCK_UPSTREAMS: "1"` in Job 2 `container-smoke-test`) to validate remote `gateway_client` (`--health`, `--message`, `--no-cache`, `--metrics`), HTTP REST/SSE endpoints, and live `GET /metrics` output in `scripts/verify_metrics_format.sh` and `.github/workflows/ci.yml` (depends on T012, T015, T017)
+- [x] T017 [US3] Wire the dedicated Prometheus `HttpServer` (`metrics_port = 9090`, serving `GET /metrics` from `TelemetryRegistry::Instance().ToPrometheusFormat()` and `GET /health`) and `BoundMetricsPort()` into `GatewayServer::Start()` and `Stop()` in `include/tessera/server/gateway_server.hpp` and `src/server/gateway_server.cpp` (depends on T014)
+- [x] T018 [P] [US3] Update environment templates, Dockerfiles, and Compose configuration (`HTTP_PORT=8080`, `EXPOSE 50051 8080 9090`, port mapping `${HTTP_PORT:-8080}:8080`, and `TESSERA_MOCK_UPSTREAMS` pass-through so Compose smoke tests execute cleanly when provider keys are empty) in `.env.example`, `deploy/.env.example`, `Dockerfile`, `deploy/Dockerfile`, and `deploy/docker-compose.yml`
+- [x] T019 [US3] Refactor `scripts/verify_metrics_format.sh` and update `.github/workflows/ci.yml` (`Verify CLI Tools & Health Check` & Prometheus step in Job 1 launching `gateway_server --mock-redis --mock-upstreams` with `trap` teardown, plus passing `TESSERA_MOCK_UPSTREAMS: "1"` in Job 2 `container-smoke-test`) to validate remote `gateway_client` (`--health`, `--message`, `--no-cache`, `--metrics`), HTTP REST/SSE endpoints, and live `GET /metrics` output in `scripts/verify_metrics_format.sh` and `.github/workflows/ci.yml` (depends on T012, T015, T017)
 
 **Checkpoint**: User Story 3 complete. Live `/metrics`, HTTP `/health`, remote CLI, Docker manifests, and CI workflows operate end-to-end against real sockets.
 
@@ -108,11 +108,11 @@
 
 ### Tests for User Story 4
 
-- [ ] T020 [US4] Add concurrency, fault-injection, and drain integration tests verifying concurrent live HTTP/SSE + RPC in-flight completion across `Stop()`, post-drain `503`/`UNAVAILABLE` rejection, startup port-conflict cleanup (`Start()` returns `false` without leaked sockets/threads), oversized `413 Payload Too Large` HTTP rejection, fragmented TCP packet HTTP parsing, and premature SSE client socket close without crashing in `tests/integration/test_live_ingress.cpp` (depends on T016)
+- [x] T020 [US4] Add concurrency, fault-injection, and drain integration tests verifying concurrent live HTTP/SSE + RPC in-flight completion across `Stop()`, post-drain `503`/`UNAVAILABLE` rejection, startup port-conflict cleanup (`Start()` returns `false` without leaked sockets/threads), oversized `413 Payload Too Large` HTTP rejection, fragmented TCP packet HTTP parsing, and premature SSE client socket close without crashing in `tests/integration/test_live_ingress.cpp` (depends on T016)
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Harden `HttpServer`, `RpcServer`, and `GatewayServer` error & shutdown paths: atomic startup rollback if any listener fails to bind, immediate `NOT_SERVING` drain flag + self-pipe socket shutdown before waiting on `drain_cv_` up to `graceful_drain_timeout_ms`, capped HTTP body reads prior to buffering (`413`), keep-alive/fragmented recv framing, and `MSG_NOSIGNAL` SSE write termination on client close in `src/server/http_server.cpp`, `src/server/rpc_server.cpp`, and `src/server/gateway_server.cpp` (depends on T011, T017)
+- [x] T021 [US4] Harden `HttpServer`, `RpcServer`, and `GatewayServer` error & shutdown paths: atomic startup rollback if any listener fails to bind, immediate `NOT_SERVING` drain flag + self-pipe socket shutdown before waiting on `drain_cv_` up to `graceful_drain_timeout_ms`, capped HTTP body reads prior to buffering (`413`), keep-alive/fragmented recv framing, and `MSG_NOSIGNAL` SSE write termination on client close in `src/server/http_server.cpp`, `src/server/rpc_server.cpp`, and `src/server/gateway_server.cpp` (depends on T011, T017)
 
 **Checkpoint**: User Story 4 complete. Network ingress is leak-free, race-free, resilient to malformed/aborted clients, and drains deterministically.
 
@@ -122,8 +122,8 @@
 
 **Purpose**: Quickstart validation, strict warning check, and full ASan/UBSan + live smoke verification.
 
-- [ ] T022 [P] Update [quickstart.md](file:///home/mayukh/projects/tessera/specs/010-live-network-ingress/quickstart.md) status and verified commands after validation execution in `specs/010-live-network-ingress/quickstart.md`
-- [ ] T023 Compile all targets under Debug + ASan/UBSan (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion`) with 0 warnings/errors, run full `ctest --test-dir build --output-on-failure --parallel $(nproc)` (`unit_tests`, `integration_tests`, `ratelimit_concurrency_test`, `concurrency_test`), execute `bash scripts/verify_metrics_format.sh`, and run full live `gateway_server` + remote `gateway_client` + OpenAI HTTP/SSE/`/v1/models`/`/health`/`/metrics` verification from `specs/010-live-network-ingress/quickstart.md`
+- [x] T022 [P] Update [quickstart.md](file:///home/mayukh/projects/tessera/specs/010-live-network-ingress/quickstart.md) status and verified commands after validation execution in `specs/010-live-network-ingress/quickstart.md`
+- [x] T023 Compile all targets under Debug + ASan/UBSan (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion`) with 0 warnings/errors, run full `ctest --test-dir build --output-on-failure --parallel $(nproc)` (`unit_tests`, `integration_tests`, `ratelimit_concurrency_test`, `concurrency_test`), execute `bash scripts/verify_metrics_format.sh`, and run full live `gateway_server` + remote `gateway_client` + OpenAI HTTP/SSE/`/v1/models`/`/health`/`/metrics` verification from `specs/010-live-network-ingress/quickstart.md`
 
 ---
 

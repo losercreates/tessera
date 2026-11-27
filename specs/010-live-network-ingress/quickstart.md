@@ -2,7 +2,7 @@
 
 **Feature**: `010-live-network-ingress`  
 **Date**: 2026-11-27  
-**Status**: Planned Validation Scenarios
+**Status**: Verified (Debug + ASan/UBSan clean build, 4/4 CTest suites, `verify_metrics_format.sh`, remote `gateway_client`, and live `curl` REST/SSE/`/v1/models`/`/health`/`/metrics` checks passed)
 
 ---
 

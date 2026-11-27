@@ -10,6 +10,9 @@ using namespace tessera;
 
 TEST(GracefulShutdownTest, DrainsInFlightRequestsCleanly) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   config.worker_threads = 4;
   config.graceful_drain_timeout_ms = 3000;
 
@@ -58,6 +61,9 @@ TEST(GracefulShutdownTest, DrainsInFlightRequestsCleanly) {
 
 TEST(GracefulShutdownTest, RejectsNewRequestsWhenStopped) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);
   server.Start();

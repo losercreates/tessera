@@ -63,22 +63,24 @@ COPY --from=builder /src/build/semantic_benchmark /usr/local/bin/semantic_benchm
 # Set ownership
 RUN chown -R tessera:tessera /app
 
-# Expose gRPC service and Prometheus metrics ports
-EXPOSE 50051 9090
+# Expose gRPC/RPC service, OpenAI HTTP ingress, and Prometheus metrics ports
+EXPOSE 50051 8080 9090
 
 # Default environment configuration
 ENV REDIS_HOST=redis-stack \
     REDIS_PORT=6379 \
     GATEWAY_PORT=50051 \
+    HTTP_PORT=8080 \
     METRICS_PORT=9090 \
     WORKER_THREADS=8 \
     CACHE_TTL=86400 \
-    SIMILARITY_THRESHOLD=0.95
+    SIMILARITY_THRESHOLD=0.95 \
+    TESSERA_MOCK_UPSTREAMS=0
 
 USER tessera
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD /usr/local/bin/gateway_client --health || exit 1
+    CMD /usr/local/bin/gateway_client --health && /usr/local/bin/gateway_client --http --health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/gateway_server"]
 

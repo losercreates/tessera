@@ -108,11 +108,25 @@ jobs:
           path: eval_report.json
           retention-days: 14
 
-      - name: Verify CLI Tools & Health Check
+      - name: Verify Live Gateway Ingress & CLI Tools
         run: |
+          ./build/gateway_server --mock-upstreams --port=50051 --http-port=8080 --metrics-port=9090 --threads=4 > /tmp/ci_gateway_server.log 2>&1 &
+          GW_PID=$!
+          trap 'kill $GW_PID 2>/dev/null || true; wait $GW_PID 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            if ./build/gateway_client --health >/dev/null 2>&1; then
+              break
+            fi
+            sleep 0.1
+          done
           ./build/gateway_client --health
+          ./build/gateway_client --http --health
           ./build/gateway_client --message "CI validation message"
           ./build/gateway_client --message "CI validation message" --no-cache
+          ./build/gateway_client --http --message "CI HTTP completion message"
+          ./build/gateway_client --stream --message "CI SSE streaming message"
+          curl -sf http://127.0.0.1:8080/v1/models | grep -q '"list"'
+          curl -sf http://127.0.0.1:9090/metrics | grep -q '# TYPE gateway_requests_total counter'
 
   # ============================================================================
   # Job 2: Multi-Stage Container Build & Live Compose Smoke Test
@@ -131,6 +145,7 @@ jobs:
       - name: Initialize Environment Configuration
         run: |
           cp .env.example .env
+          sed -i 's/^TESSERA_MOCK_UPSTREAMS=0/TESSERA_MOCK_UPSTREAMS=1/' .env
 
       - name: Launch Multi-Container Stack via Docker Compose
         run: |
@@ -153,10 +168,14 @@ jobs:
       - name: Execute In-Container Health Probe
         run: |
           docker exec tessera-gateway /usr/local/bin/gateway_client --health
+          docker exec tessera-gateway /usr/local/bin/gateway_client --http --health
 
-      - name: Execute In-Container Query with Metrics
+      - name: Execute In-Container Query, OpenAI REST/SSE & Metrics Checks
         run: |
           docker exec tessera-gateway /usr/local/bin/gateway_client --message "Docker container smoke test query" --metrics
+          docker exec tessera-gateway /usr/local/bin/gateway_client --stream --message "Docker container SSE smoke test"
+          curl -sf http://127.0.0.1:8080/v1/models | grep -q '"list"'
+          curl -sf http://127.0.0.1:9090/metrics | grep -q 'gateway_requests_total'
 
       - name: Tear Down Multi-Container Stack
         if: always()

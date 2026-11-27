@@ -8,6 +8,9 @@ using namespace tessera;
 
 TEST(ServerAsyncIntegrationTest, UnaryCompletionSucceeds) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   config.worker_threads = 2;
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);
@@ -38,6 +41,9 @@ TEST(ServerAsyncIntegrationTest, UnaryCompletionSucceeds) {
 
 TEST(ServerAsyncIntegrationTest, AutoGeneratesCorrelationIdIfMissing) {
   ServerConfig config;
+  config.port = 0;
+  config.http_port = 0;
+  config.metrics_port = 0;
   auto backend = std::make_shared<MockEchoBackend>();
   GatewayServer server(config, backend);
   ASSERT_TRUE(server.Start());
