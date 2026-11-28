@@ -149,21 +149,27 @@ jobs:
 
       - name: Launch Multi-Container Stack via Docker Compose
         run: |
-          docker compose -f deploy/docker-compose.yml up -d
+          TESSERA_MOCK_UPSTREAMS=1 docker compose --env-file .env -f deploy/docker-compose.yml up -d
 
       - name: Wait for Stack Containers to Become Healthy
         run: |
           echo "Waiting for containers to enter healthy state..."
+          BOTH_HEALTHY=0
           for i in {1..30}; do
             STATUS_REDIS=$(docker inspect --format='{{json .State.Health.Status}}' tessera-redis-stack 2>/dev/null || echo '"unknown"')
             STATUS_GATEWAY=$(docker inspect --format='{{json .State.Health.Status}}' tessera-gateway 2>/dev/null || echo '"unknown"')
             echo "Attempt $i/30: redis=$STATUS_REDIS, gateway=$STATUS_GATEWAY"
             if [ "$STATUS_REDIS" = '"healthy"' ] && [ "$STATUS_GATEWAY" = '"healthy"' ]; then
               echo "Both containers healthy!"
+              BOTH_HEALTHY=1
               break
             fi
             sleep 2
           done
+          if [ "$BOTH_HEALTHY" -ne 1 ]; then
+            docker compose --env-file .env -f deploy/docker-compose.yml logs
+            exit 1
+          fi
 
       - name: Execute In-Container Health Probe
         run: |
@@ -177,7 +183,12 @@ jobs:
           curl -sf http://127.0.0.1:8080/v1/models | grep -q '"list"'
           curl -sf http://127.0.0.1:9090/metrics | grep -q 'gateway_requests_total'
 
+      - name: Dump Logs on Smoke Test Failure
+        if: failure()
+        run: |
+          docker compose --env-file .env -f deploy/docker-compose.yml logs
+
       - name: Tear Down Multi-Container Stack
         if: always()
         run: |
-          docker compose -f deploy/docker-compose.yml down -v
+          docker compose --env-file .env -f deploy/docker-compose.yml down -v
